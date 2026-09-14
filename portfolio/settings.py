@@ -84,6 +84,7 @@ def database_config() -> dict[str, object]:
 DATABASES = {"default": database_config()}
 
 INSTALLED_APPS = [
+    "portfolio",
     "corsheaders",
     "django.contrib.admin",
     "django.contrib.auth",

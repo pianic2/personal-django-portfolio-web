@@ -1,9 +1,19 @@
 import base64
 
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from wagtail.images.models import Image
+from wagtail.models import Site
+
+from .models import (
+    ClaimEvidence,
+    ProfilePage,
+    ProjectClaim,
+    ProjectEvidence,
+    ProjectPage,
+)
 
 VALID_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -76,3 +86,106 @@ class WagtailBootstrapTests(TestCase):
         return get_user_model().objects.create_superuser(
             username="admin", email="admin@example.com", password="test-password"
         )
+
+
+class PortfolioDomainModelTests(TestCase):
+    def setUp(self):
+        self.root = Site.objects.get(is_default_site=True).root_page
+        from wagtail.models import Locale
+
+        self.english_locale = Locale.objects.create(language_code="en")
+
+    def make_project(self, stable_id):
+        project = ProjectPage(
+            title=stable_id.title(),
+            slug=stable_id,
+            stable_id=stable_id,
+            eyebrow="PROJECT",
+            detail_eyebrow="DETAIL",
+            cta_label="Open",
+            question="What was built?",
+            supporting_text="Supporting context.",
+            what_i_worked_on="The work.",
+            future_improvement="The next step.",
+            narrative={"cardSummary": "Summary"},
+            metadata={"title": stable_id, "description": "Description"},
+            origin=ProjectPage.Origin.ITS_TRAINING,
+            visual_variant=ProjectPage.VisualVariant.STUDIO_PINK,
+        )
+        self.root.add_child(instance=project)
+        project.save_revision().publish()
+        return project
+
+    def test_profile_and_project_pages_support_locale_identity_and_revisions(self):
+        profile = ProfilePage(
+            title="Profile",
+            slug="profile",
+            stable_id="profile",
+            hero_eyebrow="PROFILE",
+            hero_description="A profile.",
+            highlights_label="Highlights",
+            closing_title="Closing",
+            closing_description="A closing.",
+        )
+        self.root.add_child(instance=profile)
+        project = self.make_project("sample-project")
+
+        self.assertEqual(profile.locale.language_code, "it")
+        self.assertEqual(project.locale.language_code, "it")
+        self.assertIsNotNone(project.save_revision().as_object())
+
+        translation = project.copy_for_translation(locale=self.english_locale, copy_parents=True)
+        translation.title = "Sample project"
+        translation.slug = "sample-project-en"
+        translation.save()
+
+        self.assertEqual(translation.translation_key, project.translation_key)
+        self.assertEqual(translation.stable_id, project.stable_id)
+        self.assertNotEqual(translation.slug, project.slug)
+
+        from django.contrib.auth import get_user_model
+
+        get_user_model().objects.create_superuser(
+            username="editor", email="editor@example.com", password="editor-password"
+        )
+        self.assertTrue(self.client.login(username="editor", password="editor-password"))
+        admin_response = self.client.get(f"/admin/pages/{project.id}/edit/")
+        self.assertEqual(admin_response.status_code, 200)
+        self.assertContains(admin_response, "Stable editorial identifier")
+
+    def test_claim_evidence_cannot_cross_project_boundaries(self):
+        first = self.make_project("first-project")
+        second = self.make_project("second-project")
+        first_evidence = ProjectEvidence(
+            project=first,
+            stable_id="first-evidence",
+            evidence_type=ProjectEvidence.EvidenceType.DOCUMENTATION,
+            url="https://example.com/first",
+            label="First evidence",
+            description="First evidence.",
+        )
+        first_evidence.save()
+        claim = ProjectClaim(
+            project=second,
+            stable_id="second-claim",
+            text="A claim",
+            status=ProjectClaim.Status.VERIFIED,
+        )
+        claim.save()
+
+        relation = ClaimEvidence(claim=claim, evidence=first_evidence)
+        with self.assertRaisesMessage(ValidationError, "same project"):
+            relation.full_clean()
+
+    def test_native_wagtail_api_exposes_portfolio_page_fields(self):
+        project = self.make_project("api-project")
+        response = self.client.get(
+            f"/api/v3/pages/{project.id}/",
+            {"fields": "stable_id,origin,featured"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        item = response.json()
+        self.assertEqual(item["stable_id"], "api-project")
+        self.assertEqual(item["origin"], ProjectPage.Origin.ITS_TRAINING)
+        self.assertFalse(item["featured"])

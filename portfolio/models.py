@@ -1,0 +1,391 @@
+from __future__ import annotations
+
+from django.core.exceptions import ValidationError
+from django.db import models
+from modelcluster.fields import ParentalKey
+from wagtail.admin.panels import FieldPanel, InlinePanel, MultiFieldPanel
+from wagtail.api import APIField
+from wagtail.images import get_image_model_string
+from wagtail.models import Orderable, Page
+
+
+class LocalizedPageMixin(models.Model):
+    """Shared fields for locale-owned editorial pages."""
+
+    stable_id = models.SlugField(
+        max_length=100,
+        help_text="Stable editorial identifier shared by all locale translations.",
+    )
+
+    class Meta:
+        abstract = True
+
+    def clean(self) -> None:
+        super().clean()
+        if self.locale_id and self.stable_id:
+            duplicate = (
+                self.__class__.objects.filter(locale_id=self.locale_id, stable_id=self.stable_id)
+                .exclude(pk=self.pk)
+                .exists()
+            )
+            if duplicate:
+                raise ValidationError(
+                    {"stable_id": "This stable ID is already used in this locale."}
+                )
+
+
+class Capability(models.Model):
+    class Category(models.TextChoices):
+        FRONTEND = "frontend", "Frontend"
+        BACKEND = "backend", "Backend"
+        ARCHITECTURE = "architecture", "Architecture"
+        DELIVERY = "delivery", "Delivery"
+        QUALITY = "quality", "Quality"
+        SECURITY = "security", "Security"
+        PRODUCT = "product", "Product"
+        EMBEDDED = "embedded", "Embedded"
+
+    stable_id = models.SlugField(max_length=100, unique=True)
+    category = models.CharField(max_length=30, choices=Category.choices)
+
+    panels = [FieldPanel("stable_id"), FieldPanel("category")]
+
+    class Meta:
+        ordering = ["stable_id"]
+
+    def __str__(self) -> str:
+        return self.stable_id
+
+
+class CapabilityTranslation(models.Model):
+    capability = models.ForeignKey(
+        Capability, on_delete=models.CASCADE, related_name="translations"
+    )
+    locale = models.ForeignKey("wagtailcore.Locale", on_delete=models.CASCADE)
+    label = models.CharField(max_length=160)
+    description = models.TextField(blank=True)
+
+    panels = [
+        FieldPanel("capability"),
+        FieldPanel("locale"),
+        FieldPanel("label"),
+        FieldPanel("description"),
+    ]
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["capability", "locale"], name="unique_capability_translation_locale"
+            )
+        ]
+
+
+class ProfilePage(LocalizedPageMixin, Page):
+    hero_eyebrow = models.CharField(max_length=120)
+    hero_description = models.TextField()
+    highlights_label = models.CharField(max_length=120)
+    closing_title = models.CharField(max_length=255)
+    closing_description = models.TextField()
+
+    parent_page_types: list[str] = ["wagtailcore.Page"]
+    subpage_types: list[str] = []
+    api_fields = [
+        APIField("stable_id"),
+        APIField("hero_eyebrow"),
+        APIField("hero_description"),
+        APIField("highlights_label"),
+        APIField("closing_title"),
+        APIField("closing_description"),
+    ]
+    content_panels = Page.content_panels + [
+        FieldPanel("stable_id"),
+        MultiFieldPanel(
+            [FieldPanel("hero_eyebrow"), FieldPanel("hero_description")],
+            heading="Hero",
+        ),
+        FieldPanel("highlights_label"),
+        MultiFieldPanel(
+            [FieldPanel("closing_title"), FieldPanel("closing_description")],
+            heading="Closing",
+        ),
+        InlinePanel("sections", label="Profile sections"),
+        InlinePanel("useful_links", label="Useful links"),
+    ]
+
+class ProfileSection(Orderable):
+    page = ParentalKey(ProfilePage, on_delete=models.CASCADE, related_name="sections")
+    stable_id = models.SlugField(max_length=100)
+    number = models.CharField(max_length=20)
+    eyebrow = models.CharField(max_length=120)
+    title = models.CharField(max_length=255)
+    paragraphs = models.JSONField(default=list)
+    highlights = models.JSONField(default=list)
+
+    panels = [
+        FieldPanel("stable_id"),
+        FieldPanel("number"),
+        FieldPanel("eyebrow"),
+        FieldPanel("title"),
+        FieldPanel("paragraphs"),
+        FieldPanel("highlights"),
+    ]
+
+
+class ProfileUsefulLink(Orderable):
+    page = ParentalKey(ProfilePage, on_delete=models.CASCADE, related_name="useful_links")
+    stable_id = models.SlugField(max_length=100)
+    label = models.CharField(max_length=160)
+    description = models.TextField()
+    url = models.URLField()
+    cta_label = models.CharField(max_length=160)
+
+    panels = [
+        FieldPanel("stable_id"),
+        FieldPanel("label"),
+        FieldPanel("description"),
+        FieldPanel("url"),
+        FieldPanel("cta_label"),
+    ]
+
+
+class ProjectPage(LocalizedPageMixin, Page):
+    class Origin(models.TextChoices):
+        PERSONAL_LONG_TERM = "personal-long-term", "Personal long-term"
+        ITS_TRAINING = "its-training", "ITS training"
+
+    class VisualVariant(models.TextChoices):
+        SIGNAL_YELLOW = "signal-yellow", "Signal yellow"
+        STUDIO_PINK = "studio-pink", "Studio pink"
+        ELECTRIC_CYAN = "electric-cyan", "Electric cyan"
+
+    eyebrow = models.CharField(max_length=120)
+    detail_eyebrow = models.CharField(max_length=120)
+    cta_label = models.CharField(max_length=160)
+    question = models.TextField()
+    supporting_text = models.TextField()
+    what_i_worked_on = models.TextField()
+    future_improvement = models.TextField()
+    origin_description = models.TextField(blank=True)
+    narrative = models.JSONField(default=dict)
+    metadata = models.JSONField(default=dict)
+    origin = models.CharField(max_length=30, choices=Origin.choices)
+    visual_variant = models.CharField(max_length=30, choices=VisualVariant.choices)
+    featured = models.BooleanField(default=False)
+    display_order = models.PositiveIntegerField(default=0)
+
+    parent_page_types: list[str] = ["wagtailcore.Page"]
+    subpage_types: list[str] = []
+    api_fields = [
+        APIField("stable_id"),
+        APIField("eyebrow"),
+        APIField("detail_eyebrow"),
+        APIField("cta_label"),
+        APIField("question"),
+        APIField("supporting_text"),
+        APIField("what_i_worked_on"),
+        APIField("future_improvement"),
+        APIField("origin_description"),
+        APIField("narrative"),
+        APIField("metadata"),
+        APIField("origin"),
+        APIField("visual_variant"),
+        APIField("featured"),
+        APIField("display_order"),
+    ]
+    content_panels = Page.content_panels + [
+        FieldPanel("stable_id"),
+        FieldPanel("eyebrow"),
+        FieldPanel("detail_eyebrow"),
+        FieldPanel("cta_label"),
+        FieldPanel("question"),
+        FieldPanel("supporting_text"),
+        FieldPanel("what_i_worked_on"),
+        FieldPanel("future_improvement"),
+        FieldPanel("origin_description"),
+        FieldPanel("narrative"),
+        FieldPanel("metadata"),
+        MultiFieldPanel(
+            [
+                FieldPanel("origin"),
+                FieldPanel("visual_variant"),
+                FieldPanel("featured"),
+                FieldPanel("display_order"),
+            ],
+            heading="Project identity and ordering",
+        ),
+        InlinePanel("capabilities", label="Capabilities"),
+        InlinePanel("links", label="External links"),
+        InlinePanel("assets", label="Assets"),
+        InlinePanel("evidence", label="Evidence"),
+        InlinePanel("claims", label="Claims"),
+    ]
+
+    class Meta:
+        ordering = ["display_order", "stable_id"]
+
+
+class ProjectCapability(Orderable):
+    project = ParentalKey(ProjectPage, on_delete=models.CASCADE, related_name="capabilities")
+    capability = models.ForeignKey(Capability, on_delete=models.PROTECT)
+
+    panels = [FieldPanel("capability")]
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "capability"], name="unique_project_capability"
+            )
+        ]
+
+
+class ProjectLink(Orderable):
+    class Kind(models.TextChoices):
+        REPOSITORY = "repository", "Repository"
+        LIVE_DEMO = "live-demo", "Live demo"
+        DOCUMENTATION = "documentation", "Documentation"
+        JIRA = "jira", "Jira"
+        OTHER = "other", "Other"
+
+    project = ParentalKey(ProjectPage, on_delete=models.CASCADE, related_name="links")
+    stable_id = models.SlugField(max_length=100)
+    kind = models.CharField(max_length=30, choices=Kind.choices)
+    label = models.CharField(max_length=160)
+    accessibility_label = models.CharField(max_length=160, blank=True)
+    url = models.URLField()
+
+    panels = [
+        FieldPanel("stable_id"),
+        FieldPanel("kind"),
+        FieldPanel("label"),
+        FieldPanel("accessibility_label"),
+        FieldPanel("url"),
+    ]
+
+
+class ProjectAsset(Orderable):
+    class Provenance(models.TextChoices):
+        REPOSITORY = "repository", "Repository"
+        PROJECT_SCREENSHOT = "project-screenshot", "Project screenshot"
+        ORIGINAL = "original", "Original"
+        GENERATED = "generated", "Generated"
+        THIRD_PARTY = "third-party", "Third party"
+
+    project = ParentalKey(ProjectPage, on_delete=models.CASCADE, related_name="assets")
+    stable_id = models.SlugField(max_length=100)
+    image = models.ForeignKey(
+        get_image_model_string(), on_delete=models.PROTECT, related_name="portfolio_assets"
+    )
+    provenance = models.CharField(max_length=30, choices=Provenance.choices)
+    credit = models.CharField(max_length=255, blank=True)
+    alt = models.CharField(max_length=255, blank=True)
+    decorative = models.BooleanField(default=False)
+
+    panels = [
+        FieldPanel("stable_id"),
+        FieldPanel("image"),
+        FieldPanel("provenance"),
+        FieldPanel("credit"),
+        FieldPanel("alt"),
+        FieldPanel("decorative"),
+    ]
+
+    def clean(self) -> None:
+        super().clean()
+        if self.provenance == self.Provenance.THIRD_PARTY and not self.credit:
+            raise ValidationError({"credit": "Third-party assets require a credit."})
+        if not self.decorative and not self.alt:
+            raise ValidationError({"alt": "Informative assets require alternative text."})
+        if self.decorative and self.alt:
+            raise ValidationError({"alt": "Decorative assets must have empty alternative text."})
+
+
+class ProjectEvidence(Orderable):
+    class EvidenceType(models.TextChoices):
+        REPOSITORY = "repository", "Repository"
+        PULL_REQUEST = "pull-request", "Pull request"
+        DOCUMENTATION = "documentation", "Documentation"
+        TEST = "test", "Test"
+        DEMO = "demo", "Demo"
+        SCREENSHOT = "screenshot", "Screenshot"
+        REPORT = "report", "Report"
+
+    project = ParentalKey(ProjectPage, on_delete=models.CASCADE, related_name="evidence")
+    stable_id = models.SlugField(max_length=100)
+    evidence_type = models.CharField(max_length=30, choices=EvidenceType.choices)
+    url = models.URLField(blank=True)
+    asset = models.ForeignKey(
+        ProjectAsset,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="evidence",
+    )
+    label = models.CharField(max_length=160)
+    description = models.TextField()
+    link_label = models.CharField(max_length=160, blank=True)
+
+    panels = [
+        FieldPanel("stable_id"),
+        FieldPanel("evidence_type"),
+        FieldPanel("url"),
+        FieldPanel("asset"),
+        FieldPanel("label"),
+        FieldPanel("description"),
+        FieldPanel("link_label"),
+    ]
+
+    def clean(self) -> None:
+        super().clean()
+        if not self.url and not self.asset_id:
+            raise ValidationError("Evidence must reference either a URL or an asset.")
+
+
+class ProjectClaim(Orderable):
+    class Status(models.TextChoices):
+        VERIFIED = "verified", "Verified"
+        DEMONSTRATED = "demonstrated", "Demonstrated"
+        DECLARED = "declared", "Declared"
+        PLANNED = "planned", "Planned"
+
+    project = ParentalKey(ProjectPage, on_delete=models.CASCADE, related_name="claims")
+    stable_id = models.SlugField(max_length=100)
+    text = models.TextField()
+    status = models.CharField(max_length=20, choices=Status.choices)
+    evidence = models.ManyToManyField(
+        ProjectEvidence, through="ClaimEvidence", related_name="claims"
+    )
+
+    panels = [FieldPanel("stable_id"), FieldPanel("text"), FieldPanel("status")]
+
+    def clean(self) -> None:
+        super().clean()
+        if self.status in {self.Status.VERIFIED, self.Status.DEMONSTRATED} and not self.pk:
+            return
+        if self.status == self.Status.PLANNED and self.pk and self.evidence.exists():
+            raise ValidationError("Planned claims cannot reference evidence.")
+        if (
+            self.status in {self.Status.VERIFIED, self.Status.DEMONSTRATED}
+            and self.pk
+            and not self.evidence.exists()
+        ):
+            raise ValidationError("Verified and demonstrated claims require evidence.")
+
+
+class ClaimEvidence(models.Model):
+    claim = models.ForeignKey(
+        ProjectClaim, on_delete=models.CASCADE, related_name="evidence_links"
+    )
+    evidence = models.ForeignKey(
+        ProjectEvidence, on_delete=models.CASCADE, related_name="claim_links"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["claim", "evidence"], name="unique_claim_evidence")
+        ]
+
+    def clean(self) -> None:
+        super().clean()
+        if self.claim_id and self.evidence_id:
+            if self.claim.project_id != self.evidence.project_id:
+                raise ValidationError("Claim evidence must belong to the same project.")
