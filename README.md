@@ -16,6 +16,10 @@ uv run python manage.py check
 uv run python manage.py runserver
 ```
 
+Run the canonical backend quality command with `bash scripts/quality.sh`.
+It is also executed by CI after restoring the locked environment with
+`uv sync --frozen`.
+
 The Wagtail administration is at `/admin/`. Create a local administrator with
 `uv run python manage.py createsuperuser`.
 
@@ -23,5 +27,6 @@ The Wagtail administration is at `/admin/`. Create a local administrator with
 `DJANGO_DEBUG=false`. Set `DJANGO_DATABASE_URL` to a PostgreSQL URL in deployed
 environments, for example `postgresql://user:password@host:5432/database`.
 
-The shared execution policy lives in the PDPW Confluence runbook; repository
-documentation only records commands needed to reproduce this implementation.
+The shared execution policy lives in the [PDPW — Luna Autonomous Execution
+Runbook](https://niccolopiazzi01.atlassian.net/wiki/spaces/PDPW/pages/50855957/PDPW+Luna+Autonomous+Execution+Runbook); repository documentation only
+records commands needed to reproduce this implementation.
