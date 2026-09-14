@@ -84,7 +84,6 @@ def database_config() -> dict[str, object]:
 DATABASES = {"default": database_config()}
 
 INSTALLED_APPS = [
-    "corsheaders",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -109,7 +108,6 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -152,12 +150,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 WAGTAIL_SITE_NAME = "Personal Django Portfolio Web"
 WAGTAILADMIN_BASE_URL = os.environ.get("DJANGO_BASE_URL", "http://localhost:8000")
-CORS_ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.environ.get("DJANGO_CORS_ALLOWED_ORIGINS", "https://pianic2.github.io").split(",")
-    if origin.strip()
-]
-
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 if not DEBUG:

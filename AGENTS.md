@@ -40,6 +40,10 @@ Then:
 5. inspect the final diff;
 6. report concise evidence and stop.
 
+Before transitioning Jira to Done, verify every applicable acceptance criterion individually against actual evidence.
+
+Never stage or commit unrelated pre-existing changes. When the worktree is not clean, stage task-relevant paths or hunks explicitly.
+
 Do not implement adjacent tasks, speculative features, unrelated fixes, cleanup, or refactors.
 
 Context Budget
