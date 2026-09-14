@@ -180,6 +180,8 @@ Do not continuously synchronize Jira or Confluence during implementation.
 
 Update external systems only at meaningful state transitions or when explicitly required.
 
+Do not transition an issue to Done when a mandatory completion action is blocked. Record the blocker and leave the issue in the appropriate non-Done state.
+
 Stop / Escalation
 
 Do not stop for ordinary implementation decisions.
