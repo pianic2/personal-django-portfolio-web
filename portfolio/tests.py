@@ -15,6 +15,15 @@ class WagtailBootstrapTests(TestCase):
         self.assertEqual(self.client.get("/").status_code, 200)
         self.assertEqual(self.client.get("/admin/").status_code, 302)
 
+    def test_wagtail_api_v3_and_openapi_are_available(self):
+        openapi_response = self.client.get("/api/v3/openapi.json")
+        self.assertEqual(openapi_response.status_code, 200)
+        self.assertEqual(openapi_response.json()["openapi"], "3.1.0")
+
+        pages_response = self.client.get("/api/v3/pages/")
+        self.assertEqual(pages_response.status_code, 200)
+        self.assertIn("meta", pages_response.json()["items"][0])
+
     def test_authenticated_wagtail_admin_loads(self):
         self.create_superuser()
         self.assertTrue(self.client.login(username="admin", password="test-password"))
