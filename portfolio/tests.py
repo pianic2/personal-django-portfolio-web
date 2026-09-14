@@ -177,6 +177,33 @@ class PortfolioDomainModelTests(TestCase):
         with self.assertRaisesMessage(ValidationError, "same project"):
             relation.full_clean()
 
+        valid_evidence = ProjectEvidence(
+            project=second,
+            stable_id="second-evidence",
+            evidence_type=ProjectEvidence.EvidenceType.TEST,
+            url="https://example.com/second",
+            label="Second evidence",
+            description="Second evidence.",
+        )
+        valid_evidence.save()
+        relation = ClaimEvidence(claim=claim, evidence=valid_evidence)
+        relation.full_clean()
+        relation.save()
+        claim.refresh_from_db()
+        claim.full_clean()
+
+        planned = ProjectClaim(
+            project=second,
+            stable_id="planned-claim",
+            text="A planned claim",
+            status=ProjectClaim.Status.PLANNED,
+        )
+        planned.save()
+        planned_relation = ClaimEvidence(claim=planned, evidence=valid_evidence)
+        planned_relation.save()
+        with self.assertRaisesMessage(ValidationError, "cannot reference evidence"):
+            planned.full_clean()
+
     def test_native_wagtail_api_exposes_portfolio_page_fields(self):
         project = self.make_project("api-project")
         response = self.client.get(
