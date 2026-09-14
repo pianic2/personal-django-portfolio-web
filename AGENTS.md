@@ -59,6 +59,8 @@ Stop expanding context as soon as the task can be implemented and validated safe
 
 Use targeted paths, symbols, diffs, and searches before broad exploration.
 
+Do not acquire auxiliary memory, broad issue fields, whole-file content, or project-wide context when the active issue and targeted repository evidence are already sufficient.
+
 Do not perform repository-wide, Jira-wide, Confluence-wide, or Git-history exploration unless the active task requires it.
 
 Do not reread established context or investigate unrelated work.
@@ -168,6 +170,8 @@ Keep the final diff task-scoped.
 
 Never overwrite unrelated user changes or include secrets, credentials, local databases, caches, virtual environments, or unrelated artifacts.
 
+When the worktree is not clean, stage only explicit task-relevant paths.
+
 Reference "PDPW-..." in branch, commit, or PR metadata when applicable.
 
 Jira defines work state. Confluence stores durable decisions/runbooks.
@@ -203,6 +207,8 @@ A task is technically complete when:
 - the final diff is task-scoped;
 - evidence is concise and reproducible;
 - residual risks or blockers are explicit.
+
+A mandatory completion blocker is incompatible with `DONE`; report it and use the appropriate non-Done state.
 
 Completion report:
 
