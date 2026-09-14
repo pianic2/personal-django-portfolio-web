@@ -10,7 +10,7 @@ def main() -> None:
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:  # pragma: no cover - exercised by installation evidence
-        raise ImportError("Django is not installed. Install requirements.lock first.") from exc
+        raise ImportError("Django is not installed. Run `uv sync --frozen` first.") from exc
     execute_from_command_line(sys.argv)
 
 

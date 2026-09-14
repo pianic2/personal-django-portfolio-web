@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -46,7 +45,11 @@ if not SECRET_KEY:
 if not DEBUG and (len(SECRET_KEY) < 50 or len(set(SECRET_KEY)) < 5):
     raise RuntimeError("DJANGO_SECRET_KEY must be a strong production secret.")
 
-ALLOWED_HOSTS = [host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if host.strip()]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",")
+    if host.strip()
+]
 if DEBUG and not ALLOWED_HOSTS:
     ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
 if not DEBUG and not ALLOWED_HOSTS:
@@ -58,7 +61,11 @@ def database_config() -> dict[str, object]:
     parsed = urlparse(database_url)
     if parsed.scheme == "sqlite":
         path = unquote(parsed.path)
-        name = BASE_DIR / path.lstrip("/") if path and not path.startswith("//") else BASE_DIR / "db.sqlite3"
+        name = (
+            BASE_DIR / path.lstrip("/")
+            if path and not path.startswith("//")
+            else BASE_DIR / "db.sqlite3"
+        )
         return {"ENGINE": "django.db.backends.sqlite3", "NAME": name}
     if parsed.scheme not in {"postgres", "postgresql"}:
         raise RuntimeError("DJANGO_DATABASE_URL must use sqlite, postgres, or postgresql.")
@@ -77,6 +84,7 @@ def database_config() -> dict[str, object]:
 DATABASES = {"default": database_config()}
 
 INSTALLED_APPS = [
+    "corsheaders",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -101,6 +109,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -143,6 +152,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 WAGTAIL_SITE_NAME = "Personal Django Portfolio Web"
 WAGTAILADMIN_BASE_URL = os.environ.get("DJANGO_BASE_URL", "http://localhost:8000")
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CORS_ALLOWED_ORIGINS", "https://pianic2.github.io").split(",")
+    if origin.strip()
+]
 
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
