@@ -10,6 +10,7 @@ from django.urls import reverse
 from wagtail.images.models import Image
 from wagtail.models import Site
 
+from .canonical_data import CANONICAL
 from .models import (
     ClaimEvidence,
     ProfilePage,
@@ -222,6 +223,74 @@ class PortfolioDomainModelTests(TestCase):
 
 
 class PortfolioImportTests(TestCase):
+    def test_import_matches_backend_owned_canonical_subset_exactly(self):
+        call_command("import_portfolio", stdout=None)
+
+        for code in ("it", "en"):
+            locale = code
+            profile_source = CANONICAL["locales"][locale]["profilePage"]
+            profile = ProfilePage.objects.get(
+                stable_id="profile", locale__language_code=locale
+            )
+            self.assertEqual(profile.title, profile_source["hero"]["title"])
+            self.assertEqual(profile.hero_eyebrow, profile_source["hero"]["eyebrow"])
+            self.assertEqual(profile.hero_description, profile_source["hero"]["description"])
+            self.assertEqual(profile.closing_title, profile_source["closing"]["title"])
+            self.assertEqual(profile.closing_description, profile_source["closing"]["description"])
+            self.assertEqual(profile.slug, "profilo" if locale == "it" else "profile")
+            self.assertEqual(
+                list(
+                    profile.sections.order_by("sort_order").values(
+                        "stable_id", "number", "eyebrow", "title", "paragraphs", "highlights"
+                    )
+                ),
+                [
+                    {
+                        "stable_id": section["id"],
+                        "number": section["number"],
+                        "eyebrow": section["eyebrow"],
+                        "title": section["title"],
+                        "paragraphs": section["paragraphs"],
+                        "highlights": section["highlights"],
+                    }
+                    for section in profile_source["sections"]
+                ],
+            )
+
+            for source in CANONICAL["locales"][locale]["projects"]:
+                project = ProjectPage.objects.get(
+                    stable_id=source["projectId"], locale__language_code=locale
+                )
+                core = next(
+                    item
+                    for item in CANONICAL["shared"]["projects"]
+                    if item["id"] == source["projectId"]
+                )
+                self.assertEqual(project.slug, source["slug"])
+                self.assertEqual(project.narrative, source["narrative"])
+                self.assertEqual(project.metadata, source["metadata"])
+                self.assertEqual(project.featured, core["featured"])
+                self.assertEqual(project.display_order, core["order"])
+                self.assertEqual(project.origin, core["origin"])
+                self.assertEqual(project.visual_variant, core["visualVariant"])
+                self.assertEqual(
+                    list(project.claims.order_by("sort_order").values_list(
+                        "stable_id", "text", "status"
+                    )),
+                    [(claim["id"], claim["text"], claim["status"]) for claim in source["claims"]],
+                )
+                self.assertEqual(
+                    {
+                        claim.stable_id: list(
+                            claim.evidence.order_by("sort_order").values_list(
+                                "stable_id", flat=True
+                            )
+                        )
+                        for claim in project.claims.all()
+                    },
+                    {claim["id"]: claim["evidenceIds"] for claim in source["claims"]},
+                )
+
     def test_import_is_bilingual_and_repeatable(self):
         output = StringIO()
         call_command("import_portfolio", "--json", stdout=output)
