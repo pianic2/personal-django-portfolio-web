@@ -33,6 +33,12 @@ class LocalizedPageMixin(models.Model):
                     {"stable_id": "This stable ID is already used in this locale."}
                 )
 
+    def save(self, *args, **kwargs):
+        clean = kwargs.pop("clean", True)
+        if clean:
+            self.full_clean()
+        return super().save(*args, **kwargs)
+
 
 class Capability(models.Model):
     class Category(models.TextChoices):
@@ -389,3 +395,47 @@ class ClaimEvidence(models.Model):
         if self.claim_id and self.evidence_id:
             if self.claim.project_id != self.evidence.project_id:
                 raise ValidationError("Claim evidence must belong to the same project.")
+
+
+def validate_portfolio_integrity() -> None:
+    """Validate the imported bilingual portfolio as a complete domain dataset."""
+
+    required_locales = {"it", "en"}
+    errors: list[str] = []
+
+    for model, label in ((ProfilePage, "Profile"), (ProjectPage, "Project")):
+        groups: dict[str, list[tuple[str, str]]] = {}
+        for page in model.objects.select_related("locale"):
+            groups.setdefault(page.stable_id, []).append(
+                (page.locale.language_code, str(page.translation_key))
+            )
+        for stable_id, variants in groups.items():
+            locales = [locale for locale, _ in variants]
+            if set(locales) != required_locales or len(locales) != len(required_locales):
+                errors.append(
+                    f"{label} stable_id={stable_id!r} requires exactly one it and one en variant."
+                )
+            if len({translation_key for _, translation_key in variants}) != 1:
+                errors.append(
+                    f"{label} stable_id={stable_id!r} has conflicting translation families."
+                )
+        if model is ProfilePage and set(groups) != {"profile"}:
+            errors.append("The imported dataset must contain Profile stable_id='profile'.")
+        if model is ProjectPage and not groups:
+            errors.append("The imported dataset must contain at least one Project.")
+
+    for claim in ProjectClaim.objects.prefetch_related("evidence"):
+        if claim.evidence.exclude(project_id=claim.project_id).exists():
+            errors.append(
+                f"Claim stable_id={claim.stable_id!r} references Evidence from another Project."
+            )
+        if claim.status in {ProjectClaim.Status.VERIFIED, ProjectClaim.Status.DEMONSTRATED}:
+            if not claim.evidence.exists():
+                errors.append(
+                    f"Claim stable_id={claim.stable_id!r} requires at least one Evidence."
+                )
+        elif claim.status == ProjectClaim.Status.PLANNED and claim.evidence.exists():
+            errors.append(f"Planned claim stable_id={claim.stable_id!r} cannot reference Evidence.")
+
+    if errors:
+        raise ValidationError({"portfolio": errors})

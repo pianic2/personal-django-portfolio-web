@@ -17,6 +17,7 @@ from .models import (
     ProjectClaim,
     ProjectEvidence,
     ProjectPage,
+    validate_portfolio_integrity,
 )
 
 VALID_PNG = base64.b64decode(
@@ -97,6 +98,7 @@ class PortfolioDomainModelTests(TestCase):
         self.root = Site.objects.get(is_default_site=True).root_page
         from wagtail.models import Locale
 
+        self.italian_locale = Locale.objects.get(language_code="it")
         self.english_locale = Locale.objects.create(language_code="en")
 
     def make_project(self, stable_id):
@@ -208,6 +210,43 @@ class PortfolioDomainModelTests(TestCase):
         with self.assertRaisesMessage(ValidationError, "cannot reference evidence"):
             planned.full_clean()
 
+    def test_verified_claim_without_evidence_is_rejected(self):
+        project = self.make_project("claim-project")
+        claim = ProjectClaim.objects.create(
+            project=project,
+            stable_id="unsupported-claim",
+            text="An unsupported claim",
+            status=ProjectClaim.Status.VERIFIED,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "require evidence"):
+            claim.full_clean()
+
+        with self.assertRaisesMessage(ValidationError, "requires at least one Evidence"):
+            validate_portfolio_integrity()
+
+    def test_duplicate_project_stable_id_is_rejected_on_save(self):
+        self.make_project("duplicate-project")
+        duplicate = ProjectPage(
+            title="Duplicate",
+            slug="duplicate-project-2",
+            stable_id="duplicate-project",
+            eyebrow="PROJECT",
+            detail_eyebrow="DETAIL",
+            cta_label="Open",
+            question="What was built?",
+            supporting_text="Supporting context.",
+            what_i_worked_on="The work.",
+            future_improvement="The next step.",
+            narrative={"cardSummary": "Summary"},
+            metadata={"title": "duplicate", "description": "Description"},
+            origin=ProjectPage.Origin.ITS_TRAINING,
+            visual_variant=ProjectPage.VisualVariant.STUDIO_PINK,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "already used in this locale"):
+            self.root.add_child(instance=duplicate)
+
     def test_native_wagtail_api_exposes_portfolio_page_fields(self):
         project = self.make_project("api-project")
         response = self.client.get(
@@ -294,6 +333,10 @@ class PortfolioImportTests(TestCase):
     def test_import_is_bilingual_and_repeatable(self):
         output = StringIO()
         call_command("import_portfolio", "--json", stdout=output)
+        from wagtail.models import Locale
+
+        italian_locale = Locale.objects.get(language_code="it")
+        english_locale = Locale.objects.get(language_code="en")
         report = json.loads(output.getvalue())
         self.assertEqual(report["locales"], ["it", "en"])
         self.assertEqual(
@@ -351,6 +394,25 @@ class PortfolioImportTests(TestCase):
                 ("node-list-manager", "node-list-manager"),
             },
         )
+        for stable_id in ("homeedge-ai-platform", "its-library-api-laravel", "node-list-manager"):
+            variants = ProjectPage.objects.filter(stable_id=stable_id).order_by("locale_id")
+            self.assertEqual({variant.locale.language_code for variant in variants}, {"it", "en"})
+            self.assertEqual(
+                {variant.translation_key for variant in variants},
+                {variants[0].translation_key},
+            )
+            self.assertEqual(
+                {
+                    variant.locale.language_code: variant.get_translation(
+                        english_locale
+                        if variant.locale.language_code == "it"
+                        else italian_locale
+                    ).locale.language_code
+                    for variant in variants
+                },
+                {"it": "en", "en": "it"},
+            )
+        validate_portfolio_integrity()
         call_command("import_portfolio", stdout=None)
         self.assertEqual(
             {
@@ -382,3 +444,62 @@ class PortfolioImportTests(TestCase):
         response = self.client.get(f"/admin/pages/{project.id}/edit/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Stable editorial identifier")
+
+        form = response.context["form"]
+        data = {
+            name: field.initial
+            for name, field in form.fields.items()
+            if field.initial is not None
+        }
+        data.update(
+            {
+                "title": project.title,
+                "slug": project.slug,
+                "stable_id": project.stable_id,
+                "eyebrow": project.eyebrow,
+                "detail_eyebrow": project.detail_eyebrow,
+                "cta_label": project.cta_label,
+                "question": project.question,
+                "supporting_text": "Edited through native Wagtail admin.",
+                "what_i_worked_on": project.what_i_worked_on,
+                "future_improvement": project.future_improvement,
+                "origin_description": project.origin_description,
+                "narrative": json.dumps(project.narrative),
+                "metadata": json.dumps(project.metadata),
+                "origin": project.origin,
+                "visual_variant": project.visual_variant,
+                "featured": "on" if project.featured else "",
+                "display_order": project.display_order,
+            }
+        )
+        for formset in form.formsets.values():
+            data[f"{formset.prefix}-TOTAL_FORMS"] = formset.total_form_count()
+            data[f"{formset.prefix}-INITIAL_FORMS"] = formset.initial_form_count()
+            data[f"{formset.prefix}-MIN_NUM_FORMS"] = 0
+            data[f"{formset.prefix}-MAX_NUM_FORMS"] = 1000
+            for inline_form in formset.initial_forms:
+                for name, field in inline_form.fields.items():
+                    value = inline_form.initial.get(name)
+                    if name == "id":
+                        value = inline_form.instance.pk
+                    if value is not None:
+                        data[f"{inline_form.prefix}-{name}"] = value
+
+        revision_count = project.revisions.count()
+        save_response = self.client.post(f"/admin/pages/{project.id}/edit/", data)
+        self.assertEqual(save_response.status_code, 302)
+        project.refresh_from_db()
+        self.assertGreater(project.revisions.count(), revision_count)
+        self.assertEqual(
+            project.revisions.order_by("-created_at").first().as_object().supporting_text,
+            "Edited through native Wagtail admin.",
+        )
+
+    def test_integrity_rejects_missing_project_locale(self):
+        call_command("import_portfolio", stdout=None)
+        ProjectPage.objects.get(
+            stable_id="homeedge-ai-platform", locale__language_code="en"
+        ).delete()
+
+        with self.assertRaisesMessage(ValidationError, "exactly one it and one en"):
+            validate_portfolio_integrity()

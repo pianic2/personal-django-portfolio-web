@@ -21,6 +21,7 @@ from portfolio.models import (
     ProjectEvidence,
     ProjectLink,
     ProjectPage,
+    validate_portfolio_integrity,
 )
 
 LOCALES = ("it", "en")
@@ -184,6 +185,7 @@ class Command(BaseCommand):
         report["claims"] = ProjectClaim.objects.count()
         report["evidence"] = ProjectEvidence.objects.count()
         report["links"] = ProjectLink.objects.count()
+        validate_portfolio_integrity()
         report["profile_identifiers"] = list(
             {
                 "stable_id": item["stable_id"],
