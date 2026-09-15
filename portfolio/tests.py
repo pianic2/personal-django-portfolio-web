@@ -1,7 +1,10 @@
 import base64
+import json
+from io import StringIO
 
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from wagtail.images.models import Image
@@ -216,3 +219,97 @@ class PortfolioDomainModelTests(TestCase):
         self.assertEqual(item["stable_id"], "api-project")
         self.assertEqual(item["origin"], ProjectPage.Origin.ITS_TRAINING)
         self.assertFalse(item["featured"])
+
+
+class PortfolioImportTests(TestCase):
+    def test_import_is_bilingual_and_repeatable(self):
+        output = StringIO()
+        call_command("import_portfolio", "--json", stdout=output)
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["locales"], ["it", "en"])
+        self.assertEqual(
+            report["profile_identifiers"],
+            [
+                {"locale": "en", "slug": "profile", "stable_id": "profile"},
+                {"locale": "it", "slug": "profilo", "stable_id": "profile"},
+            ],
+        )
+        self.assertEqual(
+            len(report["project_identifiers"]),
+            6,
+        )
+        self.assertEqual(
+            {(item["stable_id"], item["locale"]) for item in report["project_identifiers"]},
+            {
+                (project_id, locale)
+                for project_id in (
+                    "homeedge-ai-platform",
+                    "its-library-api-laravel",
+                    "node-list-manager",
+                )
+                for locale in ("it", "en")
+            },
+        )
+        first_counts = {
+            "profiles": ProfilePage.objects.count(),
+            "projects": ProjectPage.objects.count(),
+            "claims": ProjectClaim.objects.count(),
+            "evidence": ProjectEvidence.objects.count(),
+        }
+        self.assertEqual(first_counts["profiles"], 2)
+        self.assertEqual(first_counts["projects"], 6)
+        self.assertEqual(first_counts["claims"], 16)
+        self.assertEqual(first_counts["evidence"], 20)
+        self.assertEqual(
+            set(ProjectPage.objects.values_list("stable_id", "locale__language_code")),
+            {
+                (project_id, locale)
+                for project_id in (
+                    "homeedge-ai-platform",
+                    "its-library-api-laravel",
+                    "node-list-manager",
+                )
+                for locale in ("it", "en")
+            },
+        )
+        self.assertEqual(
+            set(ProjectPage.objects.values_list("stable_id", "slug")),
+            {
+                ("homeedge-ai-platform", "homeedge-ai-platform"),
+                ("its-library-api-laravel", "api-libreria-its-laravel"),
+                ("its-library-api-laravel", "its-library-api-laravel"),
+                ("node-list-manager", "gestore-liste-node"),
+                ("node-list-manager", "node-list-manager"),
+            },
+        )
+        call_command("import_portfolio", stdout=None)
+        self.assertEqual(
+            {
+                model: manager.count()
+                for model, manager in (
+                    ("profiles", ProfilePage.objects),
+                    ("projects", ProjectPage.objects),
+                    ("claims", ProjectClaim.objects),
+                    ("evidence", ProjectEvidence.objects),
+                )
+            },
+            first_counts,
+        )
+
+    def test_import_publishes_editable_revisions(self):
+        call_command("import_portfolio", stdout=None)
+        self.assertTrue(ProfilePage.objects.filter(locale__language_code="en", live=True).exists())
+        project = ProjectPage.objects.get(
+            stable_id="homeedge-ai-platform", locale__language_code="en"
+        )
+        self.assertTrue(project.live)
+        self.assertGreater(project.revisions.count(), 0)
+        from django.contrib.auth import get_user_model
+
+        get_user_model().objects.create_superuser(
+            username="admin", email="admin@example.com", password="test-password"
+        )
+        self.assertTrue(self.client.login(username="admin", password="test-password"))
+        response = self.client.get(f"/admin/pages/{project.id}/edit/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Stable editorial identifier")
