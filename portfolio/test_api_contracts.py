@@ -1,8 +1,17 @@
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase, override_settings
-from wagtail.models import Site
+from wagtail.images import get_image_model
+from wagtail.models import Locale, Site
 
-from .models import ProjectPage
+from .models import BlogIndexPage, BlogPostPage, ProjectPage
+
+VALID_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+    b"\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    b"\x00\x00\x00\x0dIDAT\x08\xd7c\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff"
+    b"\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 
 
 class PublicAPIContractTests(TestCase):
@@ -129,3 +138,104 @@ class PublicAPIContractTests(TestCase):
         )
         self.assertEqual(by_slug.status_code, 200)
         self.assertEqual(by_slug.json()["count"], 0)
+
+    def test_published_blog_contract_is_localized_ordered_and_media_safe(self):
+        index = BlogIndexPage(title="Blog", slug="blog", stable_id="blog")
+        self.root.add_child(instance=index)
+        index.save_revision().publish()
+        image = get_image_model().objects.create(
+            title="Featured", file=SimpleUploadedFile("featured.png", VALID_PNG)
+        )
+        first = BlogPostPage(
+            title="First post",
+            slug="first-post",
+            stable_id="first-post",
+            excerpt="First excerpt",
+            body="First body",
+            featured_image=image,
+        )
+        index.add_child(instance=first)
+        first.save_revision().publish()
+        second = BlogPostPage(
+            title="Second post",
+            slug="second-post",
+            stable_id="second-post",
+            excerpt="Second excerpt",
+            body="Second body",
+        )
+        index.add_child(instance=second)
+        second.save_revision().publish()
+        translation = first.copy_for_translation(
+            locale=Locale.objects.get(language_code="en"), copy_parents=True
+        )
+        translation.title = "First post EN"
+        translation.slug = "first-post-en"
+        translation.save_revision().publish()
+
+        response = self.client.get(
+            "/api/v3/pages/",
+            {
+                "type": "portfolio.BlogPostPage",
+                "locale": "it",
+                "fields": "stable_id,excerpt,publication_date,body,featured_image",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual([item["id"] for item in payload["items"]], [first.id, second.id])
+        self.assertEqual(payload["items"][0]["meta"]["locale"], "it")
+        self.assertEqual(payload["items"][0]["meta"]["slug"], "first-post")
+
+        detail = self.client.get(f"/api/v3/pages/{first.id}/").json()
+        self.assertTrue(
+            {"title", "stable_id", "excerpt", "publication_date", "body", "featured_image"}
+            <= set(detail)
+        )
+        self.assertEqual(detail["featured_image"]["id"], image.id)
+        localized = self.client.get(
+            "/api/v3/pages/",
+            {"type": "portfolio.BlogPostPage", "locale": "en", "slug": "first-post-en"},
+        )
+        self.assertEqual(localized.status_code, 200)
+        self.assertEqual(localized.json()["count"], 1)
+        self.assertEqual(localized.json()["items"][0]["meta"]["locale"], "en")
+        unknown_slug = self.client.get(
+            "/api/v3/pages/",
+            {"type": "portfolio.BlogPostPage", "locale": "en", "slug": "missing"},
+        )
+        self.assertEqual(unknown_slug.status_code, 200)
+        self.assertEqual(unknown_slug.json()["count"], 0)
+        missing_locale = self.client.get(
+            "/api/v3/pages/", {"type": "portfolio.BlogPostPage", "locale": "de"}
+        )
+        self.assertEqual(missing_locale.status_code, 404)
+
+    def test_anonymous_blog_api_excludes_drafts_by_id_and_slug(self):
+        index = BlogIndexPage(title="Blog", slug="blog", stable_id="blog")
+        self.root.add_child(instance=index)
+        index.save_revision().publish()
+        draft = BlogPostPage(
+            title="Draft post",
+            slug="draft-post",
+            stable_id="draft-post",
+            excerpt="Draft excerpt",
+            body="Draft body",
+        )
+        index.add_child(instance=draft)
+        draft.save_revision()
+        BlogPostPage.objects.filter(pk=draft.pk).update(live=False, has_unpublished_changes=True)
+        draft.refresh_from_db()
+
+        by_id = self.client.get(f"/api/v3/pages/{draft.id}/")
+        self.assertEqual(by_id.status_code, 404)
+        by_slug = self.client.get(
+            "/api/v3/pages/",
+            {"type": "portfolio.BlogPostPage", "locale": "it", "slug": "draft-post"},
+        )
+        self.assertEqual(by_slug.status_code, 200)
+        self.assertEqual(by_slug.json()["count"], 0)
+        by_list = self.client.get(
+            "/api/v3/pages/", {"type": "portfolio.BlogPostPage", "locale": "it"}
+        )
+        self.assertEqual(by_list.status_code, 200)
+        self.assertEqual(by_list.json()["count"], 0)
