@@ -51,8 +51,16 @@ is exposed.
 
 The v3 OpenAPI document and interactive docs are available at
 `/api/v3/openapi.json` and `/api/v3/docs/`. Wagtail's page add/edit boundary
-also permits delete through some native operations; the MCP surface must
-exclude delete operations when it is introduced.
+also permits delete through some native operations; the MCP surface excludes
+delete operations.
+
+Start the agent-facing FastMCP server with
+`uv run python -m portfolio.mcp_server`. Set `WAGTAIL_AGENT_API_URL` and the
+server-side `WAGTAIL_AGENT_API_TOKEN` in its environment. The server fetches
+this project's Wagtail v3 OpenAPI schema and exposes only page read/draft/
+revision, content-type schema, and image/document operations. It excludes all
+other routes and rejects publish actions. Never put the bearer token in an
+agent-facing client configuration.
 
 `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS` are required when
 `DJANGO_DEBUG=false`. Set `DJANGO_DATABASE_URL` to a PostgreSQL URL in deployed

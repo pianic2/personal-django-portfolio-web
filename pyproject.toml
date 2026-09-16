@@ -8,6 +8,7 @@ dependencies = [
     "Wagtail==8.0",
     "django-cors-headers==4.9.0",
     "djangorestframework>=3.18,<4",
+    "fastmcp>=2.14,<3",
     "psycopg[binary]==3.2.10",
 ]
 
