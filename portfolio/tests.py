@@ -7,11 +7,14 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from wagtail.images.models import Image
 from wagtail.models import Site
 
 from .canonical_data import CANONICAL
 from .models import (
+    BlogIndexPage,
+    BlogPostPage,
     ClaimEvidence,
     ProfilePage,
     ProjectClaim,
@@ -121,6 +124,68 @@ class PortfolioDomainModelTests(TestCase):
         self.root.add_child(instance=project)
         project.save_revision().publish()
         return project
+
+    def make_blog_index(self):
+        index = BlogIndexPage(title="Blog", slug="blog", stable_id="blog")
+        self.root.add_child(instance=index)
+        index.save_revision().publish()
+        return index
+
+    def test_blog_pages_support_native_constraints_and_lifecycle(self):
+        index = self.make_blog_index()
+        post = BlogPostPage(
+            title="A post",
+            slug="a-post",
+            stable_id="a-post",
+            excerpt="A short summary.",
+            body="A plain text body.",
+        )
+        index.add_child(instance=post)
+        draft = post.save_revision()
+
+        self.assertEqual(post.locale, self.italian_locale)
+        self.assertIsNotNone(draft.as_object())
+        self.assertEqual(post.get_parent().specific_class, BlogIndexPage)
+        self.assertEqual(post.content_panels[-1].field_name, "featured_image")
+        self.assertEqual(post.get_children().count(), 0)
+
+        draft.publish()
+        post.refresh_from_db()
+        self.assertTrue(post.live)
+        self.assertEqual(post.publication_date, timezone.localdate())
+
+        translation = post.copy_for_translation(locale=self.english_locale, copy_parents=True)
+        translation.title = "A post in English"
+        translation.slug = "a-post-en"
+        translation.save()
+
+        self.assertEqual(translation.translation_key, post.translation_key)
+        self.assertEqual(translation.stable_id, post.stable_id)
+
+    def test_blog_post_is_editable_in_native_wagtail_admin(self):
+        index = self.make_blog_index()
+        post = BlogPostPage(
+            title="Admin post",
+            slug="admin-post",
+            stable_id="admin-post",
+            excerpt="Summary.",
+            body="Body.",
+        )
+        index.add_child(instance=post)
+        post.save_revision().publish()
+
+        from django.contrib.auth import get_user_model
+
+        get_user_model().objects.create_superuser(
+            username="blog-editor", email="blog@example.com", password="editor-password"
+        )
+        self.assertTrue(self.client.login(username="blog-editor", password="editor-password"))
+
+        response = self.client.get(f"/admin/pages/{post.id}/edit/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Publication date")
+        self.assertContains(response, "Featured image")
 
     def test_profile_and_project_pages_support_locale_identity_and_revisions(self):
         profile = ProfilePage(

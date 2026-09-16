@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 from modelcluster.fields import ParentalKey
 from wagtail.admin.panels import FieldPanel, InlinePanel, MultiFieldPanel
 from wagtail.api import APIField
@@ -38,6 +39,47 @@ class LocalizedPageMixin(models.Model):
         if clean:
             self.full_clean()
         return super().save(*args, **kwargs)
+
+
+class BlogIndexPage(LocalizedPageMixin, Page):
+    """Locale-owned Wagtail container for editable blog posts."""
+
+    parent_page_types: list[str] = ["wagtailcore.Page"]
+    subpage_types: list[str] = ["portfolio.BlogPostPage"]
+    api_fields = [APIField("stable_id")]
+    content_panels = Page.content_panels + [FieldPanel("stable_id")]
+
+
+class BlogPostPage(LocalizedPageMixin, Page):
+    """Minimal Wagtail-native blog post with API-friendly body and media."""
+
+    excerpt = models.TextField()
+    publication_date = models.DateField(default=timezone.localdate)
+    body = models.TextField()
+    featured_image = models.ForeignKey(
+        get_image_model_string(),
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="blog_posts",
+    )
+
+    parent_page_types: list[str] = ["portfolio.BlogIndexPage"]
+    subpage_types: list[str] = []
+    api_fields = [
+        APIField("stable_id"),
+        APIField("excerpt"),
+        APIField("publication_date"),
+        APIField("body"),
+        APIField("featured_image"),
+    ]
+    content_panels = Page.content_panels + [
+        FieldPanel("stable_id"),
+        FieldPanel("excerpt"),
+        FieldPanel("publication_date"),
+        FieldPanel("body"),
+        FieldPanel("featured_image"),
+    ]
 
 
 class Capability(models.Model):
