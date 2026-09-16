@@ -102,6 +102,8 @@ class ProfilePage(LocalizedPageMixin, Page):
         APIField("highlights_label"),
         APIField("closing_title"),
         APIField("closing_description"),
+        APIField("sections"),
+        APIField("useful_links"),
     ]
     content_panels = Page.content_panels + [
         FieldPanel("stable_id"),
@@ -127,6 +129,8 @@ class ProfileSection(Orderable):
     paragraphs = models.JSONField(default=list)
     highlights = models.JSONField(default=list)
 
+    api_fields = ["stable_id", "number", "eyebrow", "title", "paragraphs", "highlights"]
+
     panels = [
         FieldPanel("stable_id"),
         FieldPanel("number"),
@@ -144,6 +148,8 @@ class ProfileUsefulLink(Orderable):
     description = models.TextField()
     url = models.URLField()
     cta_label = models.CharField(max_length=160)
+
+    api_fields = ["stable_id", "label", "description", "url", "cta_label"]
 
     panels = [
         FieldPanel("stable_id"),
@@ -197,6 +203,11 @@ class ProjectPage(LocalizedPageMixin, Page):
         APIField("visual_variant"),
         APIField("featured"),
         APIField("display_order"),
+        APIField("capabilities"),
+        APIField("links"),
+        APIField("assets"),
+        APIField("evidence"),
+        APIField("claims"),
     ]
     content_panels = Page.content_panels + [
         FieldPanel("stable_id"),
@@ -234,6 +245,8 @@ class ProjectCapability(Orderable):
     project = ParentalKey(ProjectPage, on_delete=models.CASCADE, related_name="capabilities")
     capability = models.ForeignKey(Capability, on_delete=models.PROTECT)
 
+    api_fields = ["capability"]
+
     panels = [FieldPanel("capability")]
 
     class Meta:
@@ -258,6 +271,8 @@ class ProjectLink(Orderable):
     label = models.CharField(max_length=160)
     accessibility_label = models.CharField(max_length=160, blank=True)
     url = models.URLField()
+
+    api_fields = ["stable_id", "kind", "label", "accessibility_label", "url"]
 
     panels = [
         FieldPanel("stable_id"),
@@ -285,6 +300,8 @@ class ProjectAsset(Orderable):
     credit = models.CharField(max_length=255, blank=True)
     alt = models.CharField(max_length=255, blank=True)
     decorative = models.BooleanField(default=False)
+
+    api_fields = ["stable_id", "image", "provenance", "credit", "alt", "decorative"]
 
     panels = [
         FieldPanel("stable_id"),
@@ -330,6 +347,16 @@ class ProjectEvidence(Orderable):
     description = models.TextField()
     link_label = models.CharField(max_length=160, blank=True)
 
+    api_fields = [
+        "stable_id",
+        "evidence_type",
+        "url",
+        "asset",
+        "label",
+        "description",
+        "link_label",
+    ]
+
     panels = [
         FieldPanel("stable_id"),
         FieldPanel("evidence_type"),
@@ -360,6 +387,8 @@ class ProjectClaim(Orderable):
     evidence = models.ManyToManyField(
         ProjectEvidence, through="ClaimEvidence", related_name="claims"
     )
+
+    api_fields = ["stable_id", "text", "status", "evidence"]
 
     panels = [FieldPanel("stable_id"), FieldPanel("text"), FieldPanel("status")]
 

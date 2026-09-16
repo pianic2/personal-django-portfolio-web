@@ -260,6 +260,92 @@ class PortfolioDomainModelTests(TestCase):
         self.assertEqual(item["origin"], ProjectPage.Origin.ITS_TRAINING)
         self.assertFalse(item["featured"])
 
+    def test_public_api_supports_localized_profile_and_project_use_cases(self):
+        call_command("import_portfolio", stdout=None)
+
+        profile_response = self.client.get(
+            "/api/v3/pages/",
+            {
+                "type": "portfolio.ProfilePage",
+                "locale": "it",
+            },
+        )
+        self.assertEqual(profile_response.status_code, 200)
+        profile_items = profile_response.json()["items"]
+        self.assertEqual(len(profile_items), 1)
+        self.assertEqual(profile_items[0]["meta"]["locale"], "it")
+        profile_detail = self.client.get(f"/api/v3/pages/{profile_items[0]['id']}/")
+        self.assertEqual(profile_detail.status_code, 200)
+        self.assertEqual(len(profile_detail.json()["sections"]), 3)
+        self.assertEqual(len(profile_detail.json()["useful_links"]), 1)
+
+        project_list_response = self.client.get(
+            "/api/v3/pages/",
+            {
+                "type": "portfolio.ProjectPage",
+                "locale": "en",
+                "featured": "true",
+                "order": "display_order",
+            },
+        )
+        self.assertEqual(project_list_response.status_code, 200)
+        project_items = project_list_response.json()["items"]
+        self.assertTrue(project_items)
+        expected_ids = list(
+            ProjectPage.objects.filter(
+                locale__language_code="en", featured=True
+            ).order_by("display_order").values_list("id", flat=True)
+        )
+        self.assertEqual(
+            [item["id"] for item in project_items],
+            expected_ids,
+        )
+
+        slug = "its-library-api-laravel"
+        slug_response = self.client.get(
+            "/api/v3/pages/",
+            {"type": "portfolio.ProjectPage", "locale": "en", "slug": slug},
+        )
+        self.assertEqual(slug_response.status_code, 200)
+        self.assertEqual(len(slug_response.json()["items"]), 1)
+        project_id = slug_response.json()["items"][0]["id"]
+
+        detail_response = self.client.get(
+            f"/api/v3/pages/{project_id}/", {"fields": "links,claims"}
+        )
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.json()["meta"]["slug"], slug)
+        self.assertTrue(detail_response.json()["links"])
+        self.assertTrue(detail_response.json()["claims"])
+
+    def test_public_api_excludes_unpublished_pages(self):
+        draft = ProjectPage(
+            title="Draft project",
+            slug="draft-project",
+            stable_id="draft-project",
+            eyebrow="DRAFT",
+            detail_eyebrow="DRAFT",
+            cta_label="Open",
+            question="Question",
+            supporting_text="Supporting text",
+            what_i_worked_on="Work",
+            future_improvement="Future",
+            narrative={"cardSummary": "Draft"},
+            metadata={"title": "Draft", "description": "Draft"},
+            origin=ProjectPage.Origin.ITS_TRAINING,
+            visual_variant=ProjectPage.VisualVariant.STUDIO_PINK,
+        )
+        self.root.add_child(instance=draft)
+        ProjectPage.objects.filter(pk=draft.pk).update(live=False, has_unpublished_changes=True)
+        draft.save_revision()
+
+        response = self.client.get(
+            "/api/v3/pages/",
+            {"type": "portfolio.ProjectPage", "slug": "draft-project"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 0)
+
 
 class PortfolioImportTests(TestCase):
     def test_import_matches_backend_owned_canonical_subset_exactly(self):
