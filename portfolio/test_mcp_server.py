@@ -7,7 +7,12 @@ import httpx
 from django.test import SimpleTestCase
 from fastmcp.server.openapi import MCPType
 
-from .mcp_server import _contains_publish_action, _reject_publication_bypass, create_server
+from .mcp_server import (
+    _contains_publish_action,
+    _reject_publication_bypass,
+    _reject_publication_bypass_async,
+    create_server,
+)
 
 
 class MCPServerTests(SimpleTestCase):
@@ -85,7 +90,7 @@ class MCPServerTests(SimpleTestCase):
         async def check_configured_client():
             client = httpx.AsyncClient(
                 base_url="https://wagtail.example",
-                event_hooks={"request": [_reject_publication_bypass]},
+                event_hooks={"request": [_reject_publication_bypass_async]},
             )
             try:
                 with self.assertRaisesRegex(

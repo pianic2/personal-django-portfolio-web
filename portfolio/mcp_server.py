@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 from collections.abc import Mapping
@@ -11,6 +13,17 @@ from urllib.parse import urljoin
 import httpx
 from fastmcp import FastMCP
 from fastmcp.server.openapi import MCPType, RouteMap
+
+
+class _BearerTokenAuth(httpx.Auth):
+    """Add the service credential inside HTTPX after agent-facing request setup."""
+
+    def __init__(self, token: str):
+        self._token = token
+
+    def auth_flow(self, request: httpx.Request):
+        request.headers["Authorization"] = f"Bearer {self._token}"
+        yield request
 
 
 def _reject_publication_bypass(request: httpx.Request) -> None:
@@ -30,6 +43,61 @@ def _reject_publication_bypass(request: httpx.Request) -> None:
         return
     if _contains_publish_action(body):
         raise ValueError("Publication actions are not available through this API.")
+
+
+async def _reject_publication_bypass_async(request: httpx.Request) -> None:
+    """Apply the publication guard as an async HTTPX request hook."""
+    _reject_publication_bypass(request)
+
+
+async def _encode_media_upload(request: httpx.Request) -> None:
+    """Translate the MCP base64 data URL into Wagtail's multipart upload shape."""
+    if request.method != "POST" or request.url.path not in {
+        "/api/v3/images/",
+        "/api/v3/documents/",
+    }:
+        return
+    try:
+        body = json.loads(request.content)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return
+    if not isinstance(body, dict) or "file" not in body:
+        return
+
+    value = body["file"]
+    if not isinstance(value, str) or not value.startswith("data:"):
+        raise ValueError("Media file content must be supplied as a base64 data URL.")
+    header, separator, encoded_file = value.partition(",")
+    if not separator or ";base64" not in header:
+        raise ValueError("Media file content must be supplied as a base64 data URL.")
+    media_type = header[5:].split(";", 1)[0] or "application/octet-stream"
+    try:
+        file_content = base64.b64decode(encoded_file, validate=True)
+    except (binascii.Error, ValueError):
+        raise ValueError("Media file content must be valid base64.") from None
+
+    fields = {
+        key: str(field_value)
+        for key, field_value in body.items()
+        if key != "file" and field_value is not None
+    }
+    filename = body.get("title") or "upload"
+    multipart = httpx.Request(
+        request.method,
+        request.url,
+        headers={
+            key: field_value
+            for key, field_value in request.headers.items()
+            if key.casefold() not in {"content-type", "content-length"}
+        },
+        data=fields,
+        files={"file": (filename, file_content, media_type)},
+    )
+    multipart.read()
+    request.headers["Content-Type"] = multipart.headers["Content-Type"]
+    request.headers["Content-Length"] = multipart.headers["Content-Length"]
+    request.stream = multipart.stream
+    request._content = multipart.content
 
 
 def _contains_publish_action(value: Any) -> bool:
@@ -72,15 +140,33 @@ def _route_maps() -> list[RouteMap]:
     ]
 
 
+def _customize_component(_route: Any, component: Any) -> None:
+    """Keep Wagtail's heterogeneous page response valid across MCP clients."""
+    if component.name == "get_page":
+        component.output_schema = {"type": "object"}
+
+
 def create_server(openapi_spec: dict[str, Any], client: httpx.AsyncClient) -> FastMCP:
     """Build the MCP components from the supplied live Wagtail OpenAPI document."""
-    if _reject_publication_bypass not in client.event_hooks["request"]:
-        client.event_hooks["request"].append(_reject_publication_bypass)
+    for hook in (_reject_publication_bypass_async, _encode_media_upload):
+        if hook not in client.event_hooks["request"]:
+            client.event_hooks["request"].append(hook)
+    for path in ("/api/v3/images/", "/api/v3/documents/"):
+        upload = openapi_spec.get("paths", {}).get(path, {}).get("post", {})
+        multipart = upload.get("requestBody", {}).get("content", {}).get(
+            "multipart/form-data", {}
+        )
+        file_schema = multipart.get("schema", {}).get("properties", {}).get("file")
+        if file_schema is not None:
+            file_schema["description"] = (
+                "File bytes as a base64 data URL, for example data:image/png;base64,..."
+            )
     return FastMCP.from_openapi(
         openapi_spec=openapi_spec,
         client=client,
         name="Portfolio content editor",
         route_maps=_route_maps(),
+        mcp_component_fn=_customize_component,
         mcp_names={
             "pages_list": "list_pages",
             "pages_create": "create_page_draft",
@@ -115,9 +201,9 @@ def build_server() -> FastMCP:
     response.raise_for_status()
     client = httpx.AsyncClient(
         base_url=base_url,
-        headers={"Authorization": f"Bearer {token}"},
+        auth=_BearerTokenAuth(token),
         timeout=30.0,
-        event_hooks={"request": [_reject_publication_bypass]},
+        event_hooks={"request": [_reject_publication_bypass_async, _encode_media_upload]},
     )
     return create_server(response.json(), client)
 
