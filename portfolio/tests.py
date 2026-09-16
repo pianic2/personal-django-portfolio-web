@@ -133,18 +133,25 @@ class PortfolioDomainModelTests(TestCase):
 
     def test_blog_pages_support_native_constraints_and_lifecycle(self):
         index = self.make_blog_index()
+        image = Image.objects.create(
+            title="Blog feature",
+            file=SimpleUploadedFile("blog-feature.png", VALID_PNG, content_type="image/png"),
+        )
         post = BlogPostPage(
             title="A post",
             slug="a-post",
             stable_id="a-post",
             excerpt="A short summary.",
             body="A plain text body.",
+            featured_image=image,
         )
         index.add_child(instance=post)
         draft = post.save_revision()
 
         self.assertEqual(post.locale, self.italian_locale)
-        self.assertIsNotNone(draft.as_object())
+        preview = draft.as_object()
+        self.assertIsNotNone(preview)
+        self.assertEqual(preview.featured_image_id, image.pk)
         self.assertEqual(post.get_parent().specific_class, BlogIndexPage)
         self.assertEqual(post.content_panels[-1].field_name, "featured_image")
         self.assertEqual(post.get_children().count(), 0)
@@ -161,6 +168,21 @@ class PortfolioDomainModelTests(TestCase):
 
         self.assertEqual(translation.translation_key, post.translation_key)
         self.assertEqual(translation.stable_id, post.stable_id)
+
+    def test_blog_post_can_remain_single_locale_without_inventing_translation(self):
+        index = self.make_blog_index()
+        post = BlogPostPage(
+            title="Italian only",
+            slug="italian-only",
+            stable_id="italian-only",
+            excerpt="Summary.",
+            body="Body.",
+        )
+        index.add_child(instance=post)
+        post.save_revision().publish()
+
+        self.assertEqual(BlogPostPage.objects.filter(stable_id="italian-only").count(), 1)
+        self.assertEqual(post.get_translations().count(), 0)
 
     def test_blog_post_is_editable_in_native_wagtail_admin(self):
         index = self.make_blog_index()
