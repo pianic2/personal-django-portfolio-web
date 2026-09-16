@@ -176,7 +176,15 @@ Never overwrite unrelated user changes or include secrets, credentials, local da
 
 When the worktree is not clean, stage only explicit task-relevant paths.
 
-Reference "PDPW-..." in branch, commit, or PR metadata when applicable.
+Git execution contract
+
+- Read the active Jira issue's exact Base branch, Working branch and commit convention/subject before changing code or documentation. A code-changing issue is not Ready without all three.
+- Jira/Development-provided or recommended branch and commit metadata is authoritative. Use it verbatim; never invent, shorten, rename or substitute a branch name or commit subject.
+- Before implementation and again before completion, verify `git branch --show-current`, `git status --short --branch`, the declared base and relevant remote refs, and required ancestry.
+- Never implement an issue on `main`, an ancestor integration branch, a completed sibling branch, or a branch owned by another Jira issue. A technically correct diff on the wrong branch is not evidence for Done.
+- One Epic owns one integration branch; each implementation Task owns one Task branch; each independently executed Subtask owns one Subtask branch. Child branches start from their current declared parent; consume predecessor work only after it is integrated into that parent unless the active issue explicitly declares another exact base.
+- Use ordinary non-interactive `git` for repository operations, including fetch, branch/switch, status, diff, add, commit, integration and push. Never invoke shell `gh` during autonomous PDPW execution; use the connected GitHub capability/API only for GitHub-only inspection/actions when needed and available.
+- Before Done, verify the final commit key/subject, branch ownership, push/remote equality, and exact-SHA CI where applicable. If a mandatory remote Git operation cannot complete non-interactively, report a blocker; do not substitute `gh` or ask the Project Owner to run it.
 
 Jira defines work state. Confluence stores durable decisions/runbooks.
 
