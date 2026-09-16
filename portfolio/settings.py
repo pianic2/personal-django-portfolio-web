@@ -85,6 +85,7 @@ DATABASES = {"default": database_config()}
 
 INSTALLED_APPS = [
     "portfolio",
+    "rest_framework",
     "corsheaders",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -163,7 +164,23 @@ CORS_ALLOWED_ORIGINS = [
 
 WAGTAIL_SITE_NAME = "Personal Django Portfolio Web"
 WAGTAILADMIN_BASE_URL = os.environ.get("DJANGO_BASE_URL", "http://localhost:8000")
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+EMAIL_BACKEND = os.environ.get(
+    "DJANGO_EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = os.environ.get("DJANGO_EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "25"))
+EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("DJANGO_EMAIL_USE_TLS", default=False)
+DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_DEFAULT_FROM_EMAIL", "webmaster@localhost")
+CONTACT_RECIPIENT_EMAIL = os.environ.get("DJANGO_CONTACT_RECIPIENT_EMAIL", "")
+CONTACT_FROM_EMAIL = os.environ.get("DJANGO_CONTACT_FROM_EMAIL") or DEFAULT_FROM_EMAIL
+REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_RATES": {
+        "contact": "3/minute",
+        "contact_duplicate": "1/minute",
+    },
+}
 
 if not DEBUG:
     SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", default=True)
