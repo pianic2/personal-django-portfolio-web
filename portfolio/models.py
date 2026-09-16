@@ -10,6 +10,10 @@ from wagtail.images import get_image_model_string
 from wagtail.models import Orderable, Page
 
 
+def _writable_api_fields(*names: str) -> list[APIField]:
+    return [APIField(name, writable=True) for name in names]
+
+
 class LocalizedPageMixin(models.Model):
     """Shared fields for locale-owned editorial pages."""
 
@@ -46,7 +50,7 @@ class BlogIndexPage(LocalizedPageMixin, Page):
 
     parent_page_types: list[str] = ["wagtailcore.Page"]
     subpage_types: list[str] = ["portfolio.BlogPostPage"]
-    api_fields = [APIField("stable_id")]
+    api_fields = _writable_api_fields("stable_id")
     content_panels = Page.content_panels + [FieldPanel("stable_id")]
 
 
@@ -66,13 +70,9 @@ class BlogPostPage(LocalizedPageMixin, Page):
 
     parent_page_types: list[str] = ["portfolio.BlogIndexPage"]
     subpage_types: list[str] = []
-    api_fields = [
-        APIField("stable_id"),
-        APIField("excerpt"),
-        APIField("publication_date"),
-        APIField("body"),
-        APIField("featured_image"),
-    ]
+    api_fields = _writable_api_fields(
+        "stable_id", "excerpt", "publication_date", "body", "featured_image"
+    )
     content_panels = Page.content_panels + [
         FieldPanel("stable_id"),
         FieldPanel("excerpt"),
@@ -137,16 +137,16 @@ class ProfilePage(LocalizedPageMixin, Page):
 
     parent_page_types: list[str] = ["wagtailcore.Page"]
     subpage_types: list[str] = []
-    api_fields = [
-        APIField("stable_id"),
-        APIField("hero_eyebrow"),
-        APIField("hero_description"),
-        APIField("highlights_label"),
-        APIField("closing_title"),
-        APIField("closing_description"),
-        APIField("sections"),
-        APIField("useful_links"),
-    ]
+    api_fields = _writable_api_fields(
+        "stable_id",
+        "hero_eyebrow",
+        "hero_description",
+        "highlights_label",
+        "closing_title",
+        "closing_description",
+        "sections",
+        "useful_links",
+    )
     content_panels = Page.content_panels + [
         FieldPanel("stable_id"),
         MultiFieldPanel(
@@ -171,7 +171,9 @@ class ProfileSection(Orderable):
     paragraphs = models.JSONField(default=list)
     highlights = models.JSONField(default=list)
 
-    api_fields = ["stable_id", "number", "eyebrow", "title", "paragraphs", "highlights"]
+    api_fields = _writable_api_fields(
+        "stable_id", "number", "eyebrow", "title", "paragraphs", "highlights"
+    )
 
     panels = [
         FieldPanel("stable_id"),
@@ -191,7 +193,7 @@ class ProfileUsefulLink(Orderable):
     url = models.URLField()
     cta_label = models.CharField(max_length=160)
 
-    api_fields = ["stable_id", "label", "description", "url", "cta_label"]
+    api_fields = _writable_api_fields("stable_id", "label", "description", "url", "cta_label")
 
     panels = [
         FieldPanel("stable_id"),
@@ -229,28 +231,28 @@ class ProjectPage(LocalizedPageMixin, Page):
 
     parent_page_types: list[str] = ["wagtailcore.Page"]
     subpage_types: list[str] = []
-    api_fields = [
-        APIField("stable_id"),
-        APIField("eyebrow"),
-        APIField("detail_eyebrow"),
-        APIField("cta_label"),
-        APIField("question"),
-        APIField("supporting_text"),
-        APIField("what_i_worked_on"),
-        APIField("future_improvement"),
-        APIField("origin_description"),
-        APIField("narrative"),
-        APIField("metadata"),
-        APIField("origin"),
-        APIField("visual_variant"),
-        APIField("featured"),
-        APIField("display_order"),
-        APIField("capabilities"),
-        APIField("links"),
-        APIField("assets"),
-        APIField("evidence"),
-        APIField("claims"),
-    ]
+    api_fields = _writable_api_fields(
+        "stable_id",
+        "eyebrow",
+        "detail_eyebrow",
+        "cta_label",
+        "question",
+        "supporting_text",
+        "what_i_worked_on",
+        "future_improvement",
+        "origin_description",
+        "narrative",
+        "metadata",
+        "origin",
+        "visual_variant",
+        "featured",
+        "display_order",
+        "capabilities",
+        "links",
+        "assets",
+        "evidence",
+        "claims",
+    )
     content_panels = Page.content_panels + [
         FieldPanel("stable_id"),
         FieldPanel("eyebrow"),
@@ -287,7 +289,7 @@ class ProjectCapability(Orderable):
     project = ParentalKey(ProjectPage, on_delete=models.CASCADE, related_name="capabilities")
     capability = models.ForeignKey(Capability, on_delete=models.PROTECT)
 
-    api_fields = ["capability"]
+    api_fields = _writable_api_fields("capability")
 
     panels = [FieldPanel("capability")]
 
@@ -314,7 +316,7 @@ class ProjectLink(Orderable):
     accessibility_label = models.CharField(max_length=160, blank=True)
     url = models.URLField()
 
-    api_fields = ["stable_id", "kind", "label", "accessibility_label", "url"]
+    api_fields = _writable_api_fields("stable_id", "kind", "label", "accessibility_label", "url")
 
     panels = [
         FieldPanel("stable_id"),
@@ -343,7 +345,9 @@ class ProjectAsset(Orderable):
     alt = models.CharField(max_length=255, blank=True)
     decorative = models.BooleanField(default=False)
 
-    api_fields = ["stable_id", "image", "provenance", "credit", "alt", "decorative"]
+    api_fields = _writable_api_fields(
+        "stable_id", "image", "provenance", "credit", "alt", "decorative"
+    )
 
     panels = [
         FieldPanel("stable_id"),
@@ -389,15 +393,9 @@ class ProjectEvidence(Orderable):
     description = models.TextField()
     link_label = models.CharField(max_length=160, blank=True)
 
-    api_fields = [
-        "stable_id",
-        "evidence_type",
-        "url",
-        "asset",
-        "label",
-        "description",
-        "link_label",
-    ]
+    api_fields = _writable_api_fields(
+        "stable_id", "evidence_type", "url", "asset", "label", "description", "link_label"
+    )
 
     panels = [
         FieldPanel("stable_id"),
@@ -430,7 +428,7 @@ class ProjectClaim(Orderable):
         ProjectEvidence, through="ClaimEvidence", related_name="claims"
     )
 
-    api_fields = ["stable_id", "text", "status", "evidence"]
+    api_fields = _writable_api_fields("stable_id", "text", "status", "evidence")
 
     panels = [FieldPanel("stable_id"), FieldPanel("text"), FieldPanel("status")]
 

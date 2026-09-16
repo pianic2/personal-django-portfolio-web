@@ -36,7 +36,14 @@ class WagtailBootstrapTests(TestCase):
     def test_wagtail_api_v3_and_openapi_are_available(self):
         openapi_response = self.client.get("/api/v3/openapi.json")
         self.assertEqual(openapi_response.status_code, 200)
-        self.assertEqual(openapi_response.json()["openapi"], "3.1.0")
+        schema = openapi_response.json()
+        self.assertEqual(schema["openapi"], "3.1.0")
+        self.assertIn("/api/v3/pages/", schema["paths"])
+        self.assertIn("/api/v3/images/", schema["paths"])
+        self.assertIn("post", schema["paths"]["/api/v3/images/"])
+        self.assertIn("patch", schema["paths"]["/api/v3/images/{image_id}/"])
+        self.assertEqual(self.client.get("/api/v3/openapi.json").json(), schema)
+        self.assertEqual(self.client.get("/api/v3/docs/").status_code, 200)
 
         pages_response = self.client.get("/api/v3/pages/")
         self.assertEqual(pages_response.status_code, 200)
