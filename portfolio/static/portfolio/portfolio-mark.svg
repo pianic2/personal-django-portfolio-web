@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>Personal Django Portfolio</title>
+  <rect width="64" height="64" rx="14" fill="#111827"/>
+  <path d="M18 16h20c7 0 12 5 12 12s-5 12-12 12H28v8H18V16Zm10 8v8h9c2 0 4-2 4-4s-2-4-4-4h-9Z" fill="#facc15"/>
+</svg>
