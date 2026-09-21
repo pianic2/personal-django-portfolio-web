@@ -1,12 +1,14 @@
 import base64
 import json
+import sys
 from io import StringIO
+from types import ModuleType
 
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase, override_settings
-from django.urls import reverse
+from django.urls import clear_url_caches, path, reverse
 from django.utils import timezone
 from wagtail.images.models import Image
 from wagtail.models import Site
@@ -29,9 +31,51 @@ VALID_PNG = base64.b64decode(
 
 
 class WagtailBootstrapTests(TestCase):
-    def test_public_root_and_admin_login_are_available(self):
-        self.assertEqual(self.client.get("/").status_code, 200)
+    def test_admin_login_is_available(self):
         self.assertEqual(self.client.get("/admin/").status_code, 302)
+
+    @override_settings(DEBUG=False, SECURE_SSL_REDIRECT=False)
+    def test_production_root_is_not_content_bearing(self):
+        import portfolio.urls
+
+        module_name = "portfolio._pdpw33_production_urls"
+        production_urls = ModuleType(module_name)
+        production_urls.urlpatterns = [
+            *portfolio.urls.urlpatterns[:5],
+            path("", portfolio.urls.production_root),
+            portfolio.urls.urlpatterns[5],
+        ]
+        sys.modules[module_name] = production_urls
+        self.addCleanup(sys.modules.pop, module_name)
+
+        with override_settings(ROOT_URLCONF=module_name):
+            response = self.client.get("/")
+        clear_url_caches()
+
+        self.assertEqual(response.status_code, 404)
+        self.assertNotIn("Welcome to your new Wagtail site!", response.content.decode())
+
+    @override_settings(DEBUG=False, SECURE_SSL_REDIRECT=False)
+    def test_production_explicit_routes_remain_available_without_debug_media(self):
+        import portfolio.urls
+
+        module_name = "portfolio._pdpw33_production_urls"
+        production_urls = ModuleType(module_name)
+        production_urls.urlpatterns = [
+            *portfolio.urls.urlpatterns[:5],
+            path("", portfolio.urls.production_root),
+            portfolio.urls.urlpatterns[5],
+        ]
+        sys.modules[module_name] = production_urls
+        self.addCleanup(sys.modules.pop, module_name)
+
+        with override_settings(ROOT_URLCONF=module_name):
+            self.assertEqual(self.client.get("/admin/").status_code, 302)
+            self.assertEqual(self.client.get("/django-admin/").status_code, 302)
+            self.assertEqual(self.client.get("/api/v3/openapi.json").status_code, 200)
+            self.assertEqual(self.client.post("/api/contact/", {}).status_code, 400)
+            self.assertEqual(self.client.get("/media/missing.txt").status_code, 404)
+        clear_url_caches()
 
     def test_wagtail_api_v3_and_openapi_are_available(self):
         openapi_response = self.client.get("/api/v3/openapi.json")
