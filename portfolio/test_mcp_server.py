@@ -30,7 +30,7 @@ class MCPServerTests(SimpleTestCase):
         self.assertEqual(
             set(tools),
             {
-                "list_pages", "create_page_draft", "find_page", "get_page",
+                "list_pages", "create_page_draft", "create_localized_pair", "find_page", "get_page",
                 "update_page_draft", "list_page_revisions", "get_page_revision",
                 "list_content_types", "get_content_type_schema", "list_images",
                 "create_image", "get_image", "update_image", "list_documents",
