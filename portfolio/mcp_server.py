@@ -119,6 +119,7 @@ def _route_maps() -> list[RouteMap]:
     allowed = [
         ("GET", r"^/api/v3/pages/$"),
         ("POST", r"^/api/v3/pages/$"),
+        ("POST", r"^/api/v3/localized-pairs/$"),
         ("GET", r"^/api/v3/pages/find/$"),
         ("GET", r"^/api/v3/pages/\{page_id\}/$"),
         ("PATCH", r"^/api/v3/pages/\{page_id\}/$"),
@@ -170,6 +171,7 @@ def create_server(openapi_spec: dict[str, Any], client: httpx.AsyncClient) -> Fa
         mcp_names={
             "pages_list": "list_pages",
             "pages_create": "create_page_draft",
+            "localized_pairs_create": "create_localized_pair",
             "pages_find": "find_page",
             "pages_detail": "get_page",
             "pages_update": "update_page_draft",
