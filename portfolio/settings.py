@@ -162,7 +162,11 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
-WAGTAIL_SITE_NAME = "Personal Django Portfolio Web"
+PORTFOLIO_ADMIN_NAME = "Personal Django Portfolio"
+WAGTAIL_SITE_NAME = PORTFOLIO_ADMIN_NAME
+ADMIN_SITE_HEADER = PORTFOLIO_ADMIN_NAME
+ADMIN_SITE_TITLE = PORTFOLIO_ADMIN_NAME
+ADMIN_INDEX_TITLE = "Technical administration"
 WAGTAILADMIN_BASE_URL = os.environ.get("DJANGO_BASE_URL", "http://localhost:8000")
 EMAIL_BACKEND = os.environ.get(
     "DJANGO_EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
