@@ -7,7 +7,7 @@ from modelcluster.fields import ParentalKey
 from wagtail.admin.panels import FieldPanel, InlinePanel, MultiFieldPanel
 from wagtail.api import APIField
 from wagtail.images import get_image_model_string
-from wagtail.models import Orderable, Page
+from wagtail.models import Orderable, Page, Site
 
 
 def _writable_api_fields(*names: str) -> list[APIField]:
@@ -471,6 +471,20 @@ def validate_portfolio_integrity() -> None:
 
     required_locales = {"it", "en"}
     errors: list[str] = []
+
+    blog_variants = list(
+        BlogIndexPage.objects.select_related("locale").filter(stable_id="blog")
+    )
+    if len(blog_variants) != 2 or {
+        page.locale.language_code for page in blog_variants
+    } != required_locales:
+        errors.append("BlogIndex stable_id='blog' requires exactly one it and one en variant.")
+    elif len({str(page.translation_key) for page in blog_variants}) != 1:
+        errors.append("BlogIndex stable_id='blog' has conflicting translation families.")
+    root_page_id = Site.objects.get(is_default_site=True).root_page_id
+    for page in blog_variants:
+        if page.get_parent().pk != root_page_id:
+            errors.append("BlogIndex stable_id='blog' must be a direct child of the site root.")
 
     for model, label in ((ProfilePage, "Profile"), (ProjectPage, "Project")):
         groups: dict[str, list[tuple[str, str]]] = {}

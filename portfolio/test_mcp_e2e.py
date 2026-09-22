@@ -65,18 +65,6 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         self.profile = ProfilePage.objects.get(
             locale=Locale.objects.get(language_code="en"), stable_id="profile"
         )
-        root = Site.objects.get(is_default_site=True).root_page
-        for code, slug in (("it", "blog-it"), ("en", "blog-en")):
-            locale = Locale.objects.get(language_code=code)
-            if not BlogIndexPage.objects.filter(locale=locale, stable_id="blog").exists():
-                root.add_child(
-                    instance=BlogIndexPage(
-                        locale=locale,
-                        stable_id="blog",
-                        title=f"Blog {code.upper()}",
-                        slug=slug,
-                    )
-                )
 
         async def dispatch_to_wagtail(request):
             django_client = DjangoClient(HTTP_HOST="localhost")

@@ -489,6 +489,23 @@ class PortfolioImportTests(TestCase):
     def test_import_matches_backend_owned_canonical_subset_exactly(self):
         call_command("import_portfolio", stdout=None)
 
+        blog_indexes = BlogIndexPage.objects.filter(stable_id="blog").order_by("locale_id")
+        self.assertEqual(blog_indexes.count(), 2)
+        self.assertEqual(
+            set(blog_indexes.values_list("locale__language_code", flat=True)), {"it", "en"}
+        )
+        self.assertEqual(
+            {page.translation_key for page in blog_indexes},
+            {blog_indexes.first().translation_key},
+        )
+        self.assertEqual(
+            {page.get_parent().pk for page in blog_indexes},
+            {Site.objects.get(is_default_site=True).root_page_id},
+        )
+        self.assertEqual(
+            set(blog_indexes.values_list("slug", flat=True)), {"blog-it", "blog-en"}
+        )
+
         for code in ("it", "en"):
             locale = code
             profile_source = CANONICAL["locales"][locale]["profilePage"]
