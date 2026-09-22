@@ -43,6 +43,7 @@ def test_database_config_accepts_explicit_sqlite_url(monkeypatch):
     [
         ("mysql://localhost/portfolio", "must use sqlite, postgres, or postgresql"),
         ("postgresql:///portfolio", "must include a PostgreSQL host and database name"),
+        ("postgresql://localhost/", "must include a PostgreSQL host and database name"),
         ("postgresql://localhost:invalid/portfolio", "must contain a valid PostgreSQL port"),
     ],
 )
