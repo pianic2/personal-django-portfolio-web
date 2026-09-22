@@ -6,6 +6,17 @@ Deliver the smallest correct change that satisfies the active PDPW Jira task whi
 
 Do not redesign the project unless the active task requires it.
 
+Portfolio content operations
+
+Requests to create, add, or write a portfolio blog post or article are content
+operations, not Jira or engineering tasks. Use the already-connected `portfolio`
+MCP server directly: call `portfolio.create_localized_pair` with
+`type="portfolio.BlogPostPage"`, `parent_stable_id="blog"`, IT and EN generated
+in the same LLM pass, and one shared `stable_id`. Perform exactly one pair-create
+mutation. Do not use `ALL_TOOLS`, MCP resource discovery, repository or Jira
+discovery, local wrappers, or generic `create_page_draft` for this intent.
+Investigate tooling only if the canonical MCP call is unavailable or fails.
+
 Project
 
 - Repository: "pianic2/personal-django-portfolio-web"

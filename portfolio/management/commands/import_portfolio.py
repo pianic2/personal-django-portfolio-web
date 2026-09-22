@@ -10,6 +10,7 @@ from wagtail.models import Locale, Site
 
 from portfolio.canonical_data import CANONICAL
 from portfolio.models import (
+    BlogIndexPage,
     Capability,
     CapabilityTranslation,
     ClaimEvidence,
@@ -38,6 +39,9 @@ CAPABILITY_LABELS = {
         "node-api": "Node.js ed Express",
         "sqlite-persistence": "Persistenza SQLite",
         "automated-testing": "Test automatici",
+        "python-ai": "Python e AI",
+        "multi-agent-systems": "Sistemi multi-agente",
+        "financial-data-analysis": "Analisi di dati finanziari",
     },
     "en": {
         "embedded-firmware": "ESP32-C3 sensors",
@@ -49,6 +53,9 @@ CAPABILITY_LABELS = {
         "node-api": "Node.js and Express",
         "sqlite-persistence": "SQLite persistence",
         "automated-testing": "Automated tests",
+        "python-ai": "Python and AI",
+        "multi-agent-systems": "Multi-agent systems",
+        "financial-data-analysis": "Financial data analysis",
     },
 }
 
@@ -86,6 +93,25 @@ class Command(BaseCommand):
             "evidence": 0,
             "links": 0,
         }
+
+        for code in LOCALES:
+            blog = BlogIndexPage.objects.filter(locale=locales[code], stable_id="blog").first()
+            if blog is None:
+                if code == "it":
+                    blog = root.add_child(
+                        instance=BlogIndexPage(title="Blog", slug="blog", stable_id="blog")
+                    )
+                else:
+                    blog = BlogIndexPage.objects.get(
+                        locale=locales["it"], stable_id="blog"
+                    ).copy_for_translation(locale=locales["en"], copy_parents=True)
+            BlogIndexPage.objects.filter(pk=blog.pk).update(
+                title="Blog",
+                slug="blog",
+                stable_id="blog",
+            )
+            blog.refresh_from_db()
+            blog.save_revision().publish()
 
         for capability in SHARED["capabilities"]:
             obj, _ = Capability.objects.update_or_create(
