@@ -48,6 +48,11 @@ class MCPServerTests(SimpleTestCase):
         self.assertNotIn("delete", " ".join(tools))
         self.assertIn("only creation path", tools["create_localized_pair"].description)
         self.assertNotIn("create_page_draft", tools["create_localized_pair"].description)
+        pair_schema = tools["create_localized_pair"].parameters
+        locale_schema = pair_schema["$defs"]["LocalizedPagePayload"]
+        self.assertEqual(locale_schema["required"], ["parent_id"])
+        self.assertNotIn("locale", locale_schema["properties"])
+        self.assertNotIn("status", locale_schema["properties"])
         list_schema = tools["list_pages"].parameters
         self.assertEqual(list_schema["properties"]["limit"].get("maximum"), 20)
         self.assertIn("pk, not id", list_schema["properties"]["order"]["description"])
