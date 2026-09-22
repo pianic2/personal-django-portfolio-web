@@ -3,9 +3,9 @@ import json
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import TestCase
-from wagtail.models import APIToken, Site
+from wagtail.models import APIToken, Locale, Site
 
-from .models import BlogIndexPage
+from .models import BlogIndexPage, BlogPostPage
 
 
 class LocalizedPairAPITests(TestCase):
@@ -26,6 +26,44 @@ class LocalizedPairAPITests(TestCase):
             "stable_id": stable_id,
             "it": {"parent_id": self.root_id, "title": "Indice IT", "slug": f"{stable_id}-it"},
             "en": {"parent_id": self.root_id, "title": "Index EN", "slug": f"{stable_id}-en"},
+        }
+
+    def blog_post_parents(self, stable_id="blog"):
+        root = Site.objects.get(is_default_site=True).root_page
+        parents = {}
+        for code, slug in (("it", "blog-it"), ("en", "blog-en")):
+            locale = Locale.objects.get(language_code=code)
+            parent = BlogIndexPage.objects.filter(locale=locale, stable_id=stable_id).first()
+            if parent is None:
+                parent = root.add_child(
+                    instance=BlogIndexPage(
+                        locale=locale,
+                        stable_id=stable_id,
+                        title=f"Blog {code.upper()}",
+                        slug=slug,
+                    )
+                )
+            parents[code] = parent
+        return parents
+
+    def blog_post_payload(self, stable_id="post-test", parent_stable_id="blog"):
+        self.blog_post_parents(parent_stable_id)
+        return {
+            "type": "portfolio.BlogPostPage",
+            "stable_id": stable_id,
+            "parent_stable_id": parent_stable_id,
+            "it": {
+                "title": "Articolo IT",
+                "slug": f"{stable_id}-it",
+                "excerpt": "Estratto",
+                "body": "Corpo",
+            },
+            "en": {
+                "title": "Article EN",
+                "slug": f"{stable_id}-en",
+                "excerpt": "Excerpt",
+                "body": "Body",
+            },
         }
 
     def test_pair_creation_is_atomic_and_shares_translation_identity(self):
@@ -82,3 +120,47 @@ class LocalizedPairAPITests(TestCase):
         )
         self.assertEqual(duplicate.status_code, 400, duplicate.content)
         self.assertEqual(BlogIndexPage.objects.filter(stable_id="duplicate-test").count(), 2)
+
+    def test_blog_post_resolves_localized_parent_by_stable_identity(self):
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(self.blog_post_payload()),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        pages = BlogPostPage.objects.filter(stable_id="post-test").select_related("locale")
+        self.assertEqual(pages.count(), 2)
+        for page in pages:
+            self.assertEqual(page.get_parent().specific_class, BlogIndexPage)
+            self.assertEqual(page.get_parent().specific.stable_id, "blog")
+            self.assertEqual(page.get_parent().locale_id, page.locale_id)
+        self.assertEqual(
+            {page.translation_key for page in pages},
+            {next(iter(pages)).translation_key},
+        )
+
+    def test_blog_post_missing_stable_parent_is_actionable_and_atomic(self):
+        payload = self.blog_post_payload("missing-parent")
+        payload["parent_stable_id"] = "missing-blog"
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("parent_stable_id", response.json()["detail"])
+        self.assertFalse(BlogPostPage.objects.filter(stable_id="missing-parent").exists())
+
+    def test_blog_post_rejects_numeric_parent_ids(self):
+        payload = self.blog_post_payload("numeric-parent")
+        payload["it"]["parent_id"] = self.root_id
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unsupported fields", response.json()["detail"])

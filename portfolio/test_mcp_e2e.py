@@ -20,7 +20,7 @@ from wagtail.models import APIToken, Collection, GroupPagePermission, Locale, Pa
 
 from . import mcp_server
 from .mcp_server import _BearerTokenAuth, create_server
-from .models import BlogIndexPage, ProfilePage
+from .models import BlogIndexPage, BlogPostPage, ProfilePage
 
 
 class MCPAgentBoundaryTests(TransactionTestCase):
@@ -65,6 +65,18 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         self.profile = ProfilePage.objects.get(
             locale=Locale.objects.get(language_code="en"), stable_id="profile"
         )
+        root = Site.objects.get(is_default_site=True).root_page
+        for code, slug in (("it", "blog-it"), ("en", "blog-en")):
+            locale = Locale.objects.get(language_code=code)
+            if not BlogIndexPage.objects.filter(locale=locale, stable_id="blog").exists():
+                root.add_child(
+                    instance=BlogIndexPage(
+                        locale=locale,
+                        stable_id="blog",
+                        title=f"Blog {code.upper()}",
+                        slug=slug,
+                    )
+                )
 
         async def dispatch_to_wagtail(request):
             django_client = DjangoClient(HTTP_HOST="localhost")
@@ -119,7 +131,6 @@ class MCPAgentBoundaryTests(TransactionTestCase):
             f"/api/v3/pages/{self.profile.pk}/"
         ).json()
         openapi = DjangoClient(HTTP_HOST="localhost").get("/api/v3/openapi.json").json()
-        root_id = Site.objects.get(is_default_site=True).root_page_id
         upstream_requests = []
 
         async def observe_request(request):
@@ -156,24 +167,29 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         captured_logs = []
         discovery_calls = 1
         generation_calls = 0
+        generated_payload = None
 
         def generate_bilingual_article():
-            nonlocal generation_calls
+            nonlocal generation_calls, generated_payload
             generation_calls += 1
-            return {
-                "type": "portfolio.BlogIndexPage",
-                "stable_id": "mcp-draft-index",
+            generated_payload = {
+                "type": "portfolio.BlogPostPage",
+                "stable_id": "mcp-draft-post",
+                "parent_stable_id": "blog",
                 "it": {
-                    "parent_id": root_id,
-                    "title": "MCP draft index IT",
-                    "slug": "mcp-draft-index-it",
+                    "title": "MCP draft post IT",
+                    "slug": "mcp-draft-post-it",
+                    "excerpt": "Estratto",
+                    "body": "Corpo IT",
                 },
                 "en": {
-                    "parent_id": root_id,
-                    "title": "MCP draft index EN",
-                    "slug": "mcp-draft-index-en",
+                    "title": "MCP draft post EN",
+                    "slug": "mcp-draft-post-en",
+                    "excerpt": "Excerpt",
+                    "body": "Body EN",
                 },
             }
+            return generated_payload
 
         class TokenCheckingHandler(logging.Handler):
             def emit(self, record):
@@ -252,6 +268,14 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         self.assertEqual(generation_calls, 1)
         self.assertEqual(
             sum(
+                method == "GET" and path == "/api/v3/pages/"
+                for method, path, _ in upstream_requests
+            ),
+            0,
+        )
+        self.assertNotIn("parent_id", json.dumps(generated_payload))
+        self.assertEqual(
+            sum(
                 method == "POST" and path == "/api/v3/localized-pairs/"
                 for method, path, _ in upstream_requests
             ),
@@ -292,13 +316,17 @@ class MCPAgentBoundaryTests(TransactionTestCase):
             f"/api/v3/pages/{self.profile.pk}/"
         ).json()
         self.assertEqual(public_after, public_before)
-        draft = BlogIndexPage.objects.get(pk=created_id)
-        english_draft = BlogIndexPage.objects.get(pk=created_en_id)
+        draft = BlogPostPage.objects.get(pk=created_id)
+        english_draft = BlogPostPage.objects.get(pk=created_en_id)
         self.assertFalse(draft.live)
         self.assertFalse(english_draft.live)
         self.assertEqual(draft.title, "MCP revised draft index")
         self.assertEqual(draft.stable_id, english_draft.stable_id)
         self.assertEqual(draft.translation_key, english_draft.translation_key)
+        self.assertEqual(draft.get_parent().specific_class, BlogIndexPage)
+        self.assertEqual(english_draft.get_parent().specific_class, BlogIndexPage)
+        self.assertEqual(draft.get_parent().locale_id, draft.locale_id)
+        self.assertEqual(english_draft.get_parent().locale_id, english_draft.locale_id)
         self.assertGreater(draft.revisions.count(), 1)
         image = get_image_model().objects.get(title="MCP updated image")
         self.assertEqual(image.collection.name, "Portfolio agent content")

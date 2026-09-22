@@ -21,6 +21,16 @@ class LocalizedPagePairCreate(Schema):
         "portfolio.ProjectPage",
     ]
     stable_id: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9-]+$")
+    parent_stable_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9-]+$",
+        description=(
+            "Stable editorial parent identity. Required for BlogPostPage; the "
+            "server resolves the IT and EN BlogIndexPage parents by locale."
+        ),
+    )
     it: dict[str, Any]
     en: dict[str, Any]
 
@@ -64,15 +74,45 @@ def _create_variant(
     *,
     model: type[Page],
     locale: Locale,
-    parent_id: int,
+    parent_id: int | None,
+    parent_stable_id: str | None,
     stable_id: str,
     values: dict[str, Any],
     translation_key: Any | None,
     user,
 ) -> Page:
-    if not isinstance(parent_id, int) or parent_id <= 0:
-        raise ValidationError({"parent_id": "A positive parent page ID is required."})
-    parent = Page.objects.get(pk=parent_id).specific
+    if model is BlogPostPage:
+        if parent_stable_id is None:
+            raise ValidationError(
+                {"parent_stable_id": "This stable parent identity is required for BlogPostPage."}
+            )
+        try:
+            parent = BlogIndexPage.objects.get(
+                stable_id=parent_stable_id,
+                locale=locale,
+            )
+        except BlogIndexPage.DoesNotExist:
+            raise ValidationError(
+                {
+                    "parent_stable_id": (
+                        f"No BlogIndexPage with stable_id={parent_stable_id!r} "
+                        f"exists for locale {locale.language_code}."
+                    )
+                }
+            ) from None
+        except BlogIndexPage.MultipleObjectsReturned:
+            raise ValidationError(
+                {
+                    "parent_stable_id": (
+                        f"Multiple BlogIndexPage parents use stable_id={parent_stable_id!r} "
+                        f"for locale {locale.language_code}."
+                    )
+                }
+            ) from None
+    else:
+        if not isinstance(parent_id, int) or parent_id <= 0:
+            raise ValidationError({"parent_id": "A positive parent page ID is required."})
+        parent = Page.objects.get(pk=parent_id).specific
     is_site_root = Site.objects.filter(root_page_id=parent.pk).exists()
     if parent.locale_id != locale.id and not is_site_root:
         raise ValidationError({"parent_id": f"Parent must use locale {locale.language_code}."})
@@ -83,10 +123,11 @@ def _create_variant(
             {"stable_id": f"A {locale.language_code} page already uses this stable ID."}
         )
 
-    unknown = set(values) - _page_fields(model) - {"parent_id"}
+    allowed_parent_fields = set() if model is BlogPostPage else {"parent_id"}
+    unknown = set(values) - _page_fields(model) - allowed_parent_fields
     if unknown:
         raise ValidationError({"data": f"Unsupported fields: {', '.join(sorted(unknown))}."})
-    if "parent_id" not in values:
+    if model is not BlogPostPage and "parent_id" not in values:
         raise ValidationError({"parent_id": "This field is required for each locale."})
     page = model(locale=locale, stable_id=stable_id)
     if translation_key is not None:
@@ -127,6 +168,7 @@ def create_localized_pair(
                 model=model,
                 locale=locales["it"],
                 parent_id=data.it.get("parent_id"),
+                parent_stable_id=data.parent_stable_id,
                 stable_id=data.stable_id,
                 values=data.it,
                 translation_key=None,
@@ -136,13 +178,26 @@ def create_localized_pair(
                 model=model,
                 locale=locales["en"],
                 parent_id=data.en.get("parent_id"),
+                parent_stable_id=data.parent_stable_id,
                 stable_id=data.stable_id,
                 values=data.en,
                 translation_key=first.translation_key,
                 user=request.user,
             )
     except (Locale.DoesNotExist, Page.DoesNotExist, ValidationError, IntegrityError) as exc:
-        raise HttpError(400, "Localized pair creation failed; no pages were created.") from exc
+        if isinstance(exc, ValidationError):
+            details = "; ".join(
+                f"{field}: {', '.join(str(message) for message in messages)}"
+                for field, messages in exc.message_dict.items()
+            )
+        elif isinstance(exc, Page.DoesNotExist):
+            details = "parent_id: Parent page does not exist."
+        else:
+            details = str(exc)
+        raise HttpError(
+            400,
+            f"Localized pair creation failed; no pages were created. {details}",
+        ) from exc
 
     return Status(201, {
         "stable_id": data.stable_id,
