@@ -5,7 +5,7 @@ from django.core.management import call_command
 from django.test import TestCase
 from wagtail.models import APIToken, Site
 
-from .models import BlogIndexPage
+from .models import BlogIndexPage, BlogPostPage
 
 
 class LocalizedPairAPITests(TestCase):
@@ -43,6 +43,40 @@ class LocalizedPairAPITests(TestCase):
         self.assertEqual({page.locale.language_code for page in pages}, {"it", "en"})
         self.assertEqual({page.translation_key for page in pages}, {pages[0].translation_key})
         self.assertTrue(all(not page.live for page in pages))
+
+    def test_blog_post_pair_resolves_stable_blog_parents(self):
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps({
+                "type": "portfolio.BlogPostPage",
+                "stable_id": "stable-parent-post",
+                "it": {
+                    "parent_stable_id": "blog",
+                    "title": "Post IT",
+                    "slug": "stable-parent-post-it",
+                    "excerpt": "Sintesi IT",
+                    "body": "Contenuto IT",
+                },
+                "en": {
+                    "parent_stable_id": "blog",
+                    "title": "Post EN",
+                    "slug": "stable-parent-post-en",
+                    "excerpt": "EN summary",
+                    "body": "EN content",
+                },
+            }),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        pages = BlogPostPage.objects.filter(stable_id="stable-parent-post").select_related(
+            "locale"
+        )
+        self.assertEqual(pages.count(), 2)
+        self.assertTrue(all(not page.live for page in pages))
+        self.assertEqual(
+            {page.get_parent().specific_class for page in pages}, {BlogIndexPage}
+        )
 
     def test_invalid_locale_shape_duplicate_and_second_locale_failure_are_rejected(self):
         missing_en = self.payload()

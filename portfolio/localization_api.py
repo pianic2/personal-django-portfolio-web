@@ -83,10 +83,10 @@ def _create_variant(
             {"stable_id": f"A {locale.language_code} page already uses this stable ID."}
         )
 
-    unknown = set(values) - _page_fields(model) - {"parent_id"}
+    unknown = set(values) - _page_fields(model) - {"parent_id", "parent_stable_id"}
     if unknown:
         raise ValidationError({"data": f"Unsupported fields: {', '.join(sorted(unknown))}."})
-    if "parent_id" not in values:
+    if parent_id is None:
         raise ValidationError({"parent_id": "This field is required for each locale."})
     page = model(locale=locale, stable_id=stable_id)
     if translation_key is not None:
@@ -99,6 +99,19 @@ def _create_variant(
     page.save(update_fields=["live"])
     page.save_revision(user=user)
     return page
+
+
+def _parent_id_for_values(*, locale: Locale, values: dict[str, Any]) -> Any:
+    """Resolve the canonical stable parent while retaining numeric compatibility."""
+    if "parent_id" in values:
+        return values["parent_id"]
+    stable_id = values.get("parent_stable_id")
+    if stable_id is None:
+        return None
+    parent = BlogIndexPage.objects.filter(locale=locale, stable_id=stable_id).first()
+    if parent is None:
+        raise ValidationError({"parent_stable_id": "A matching blog parent is required."})
+    return parent.pk
 
 
 @router.post(
@@ -126,7 +139,7 @@ def create_localized_pair(
             first = _create_variant(
                 model=model,
                 locale=locales["it"],
-                parent_id=data.it.get("parent_id"),
+                parent_id=_parent_id_for_values(locale=locales["it"], values=data.it),
                 stable_id=data.stable_id,
                 values=data.it,
                 translation_key=None,
@@ -135,7 +148,7 @@ def create_localized_pair(
             second = _create_variant(
                 model=model,
                 locale=locales["en"],
-                parent_id=data.en.get("parent_id"),
+                parent_id=_parent_id_for_values(locale=locales["en"], values=data.en),
                 stable_id=data.stable_id,
                 values=data.en,
                 translation_key=first.translation_key,
