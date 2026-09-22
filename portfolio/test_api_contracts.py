@@ -5,6 +5,7 @@ from wagtail.images import get_image_model
 from wagtail.models import Locale, Site
 
 from .models import BlogIndexPage, BlogPostPage, ProjectPage
+from .test_support import ensure_localized_site_roots
 
 VALID_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
@@ -17,6 +18,7 @@ VALID_PNG = (
 class PublicAPIContractTests(TestCase):
     @classmethod
     def setUpTestData(cls):
+        ensure_localized_site_roots()
         call_command("import_portfolio", verbosity=0)
         cls.root = Site.objects.get(is_default_site=True).root_page
 

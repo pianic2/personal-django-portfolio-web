@@ -20,6 +20,7 @@ from wagtail.models import (
 from wagtail.permissions import policy_registry
 
 from .models import BlogIndexPage, BlogPostPage, ProfilePage, ProjectPage
+from .test_support import ensure_localized_site_roots
 
 
 def png_file(name="agent.png"):
@@ -31,6 +32,7 @@ def png_file(name="agent.png"):
 class PortfolioAgentAPITests(TestCase):
     @classmethod
     def setUpTestData(cls):
+        ensure_localized_site_roots()
         call_command("import_portfolio", verbosity=0)
 
     def setUp(self):

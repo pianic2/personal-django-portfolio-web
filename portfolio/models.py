@@ -7,7 +7,7 @@ from modelcluster.fields import ParentalKey
 from wagtail.admin.panels import FieldPanel, InlinePanel, MultiFieldPanel
 from wagtail.api import APIField
 from wagtail.images import get_image_model_string
-from wagtail.models import Orderable, Page, Site
+from wagtail.models import Locale, Orderable, Page, Site
 
 
 def _writable_api_fields(*names: str) -> list[APIField]:
@@ -481,10 +481,33 @@ def validate_portfolio_integrity() -> None:
         errors.append("BlogIndex stable_id='blog' requires exactly one it and one en variant.")
     elif len({str(page.translation_key) for page in blog_variants}) != 1:
         errors.append("BlogIndex stable_id='blog' has conflicting translation families.")
-    root_page_id = Site.objects.get(is_default_site=True).root_page_id
-    for page in blog_variants:
-        if page.get_parent().pk != root_page_id:
-            errors.append("BlogIndex stable_id='blog' must be a direct child of the site root.")
+    if len(blog_variants) == 2 and {
+        page.locale.language_code for page in blog_variants
+    } == required_locales:
+        site_root = Site.objects.get(is_default_site=True).root_page
+        localized_roots = {
+            code: site_root.get_translation(
+                Locale.objects.get(language_code=code)
+            )
+            for code in required_locales
+        }
+        parents = {}
+        for page in blog_variants:
+            code = page.locale.language_code
+            parent = page.get_parent()
+            parents[code] = parent
+            if parent.locale_id != page.locale_id:
+                errors.append(
+                    f"BlogIndex stable_id='blog' {code} parent must use the same locale."
+                )
+            if parent.pk != localized_roots[code].pk:
+                errors.append(
+                    f"BlogIndex stable_id='blog' {code} must be under its localized site root."
+                )
+        if len({str(parent.translation_key) for parent in parents.values()}) != 1:
+            errors.append(
+                "BlogIndex stable_id='blog' parents have conflicting translation families."
+            )
 
     for model, label in ((ProfilePage, "Profile"), (ProjectPage, "Project")):
         groups: dict[str, list[tuple[str, str]]] = {}

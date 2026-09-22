@@ -21,6 +21,7 @@ from wagtail.models import APIToken, Collection, GroupPagePermission, Locale, Pa
 from . import mcp_server
 from .mcp_server import _BearerTokenAuth, create_server
 from .models import BlogIndexPage, BlogPostPage, ProfilePage
+from .test_support import ensure_localized_site_roots
 
 
 class MCPAgentBoundaryTests(TransactionTestCase):
@@ -52,6 +53,7 @@ class MCPAgentBoundaryTests(TransactionTestCase):
                 hostname="localhost", root_page=homepage, is_default_site=True
             )
             Collection.add_root(instance=Collection(name="Root"))
+        ensure_localized_site_roots()
         call_command("import_portfolio", verbosity=0)
         call_command("configure_agent_account", verbosity=0)
         user = get_user_model().objects.get(username="portfolio-agent")

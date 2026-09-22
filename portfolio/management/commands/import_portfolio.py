@@ -216,13 +216,18 @@ class Command(BaseCommand):
 def _sync_blog_index(root, locales):
     """Reconcile the canonical bilingual BlogIndex container."""
 
+    localized_roots = {
+        code: root.get_translation(locales[code])
+        for code in LOCALES
+    }
     variants = {}
     for code in LOCALES:
+        parent = localized_roots[code]
         matches = list(
             BlogIndexPage.objects.filter(locale=locales[code], stable_id="blog").order_by("pk")
         )
         page = next(
-            (candidate for candidate in matches if candidate.get_parent().pk == root.pk),
+            (candidate for candidate in matches if candidate.get_parent().pk == parent.pk),
             matches[0] if matches else None,
         )
         for duplicate in matches:
@@ -230,7 +235,7 @@ def _sync_blog_index(root, locales):
                 duplicate.delete()
         if page is None:
             if code == "it":
-                page = root.add_child(
+                page = parent.add_child(
                     instance=BlogIndexPage(
                         locale=locales[code], title="Blog", slug="blog", stable_id="blog"
                     )
@@ -246,8 +251,8 @@ def _sync_blog_index(root, locales):
             locale=locales[code],
         )
         page.refresh_from_db()
-        if page.get_parent().pk != root.pk:
-            page.move(root, pos="last-child")
+        if page.get_parent().pk != parent.pk:
+            page.move(parent, pos="last-child")
         variants[code] = page
 
     if variants["en"].translation_key != variants["it"].translation_key:

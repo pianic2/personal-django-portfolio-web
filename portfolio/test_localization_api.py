@@ -6,11 +6,13 @@ from django.test import TestCase
 from wagtail.models import APIToken, Locale, Site
 
 from .models import BlogIndexPage, BlogPostPage
+from .test_support import ensure_localized_site_roots
 
 
 class LocalizedPairAPITests(TestCase):
     @classmethod
     def setUpTestData(cls):
+        ensure_localized_site_roots()
         call_command("import_portfolio", verbosity=0)
 
     def setUp(self):
