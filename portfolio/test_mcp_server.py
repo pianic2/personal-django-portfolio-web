@@ -30,7 +30,7 @@ class MCPServerTests(SimpleTestCase):
         self.assertEqual(
             set(tools),
             {
-                "list_pages", "create_page_draft", "create_localized_pair", "find_page", "get_page",
+                "list_pages", "create_localized_pair", "find_page", "get_page",
                 "update_page_draft", "list_page_revisions", "get_page_revision",
                 "list_content_types", "get_content_type_schema", "list_images",
                 "create_image", "get_image", "update_image", "list_documents",
@@ -46,6 +46,13 @@ class MCPServerTests(SimpleTestCase):
         self.assertNotIn("test-secret", inventory)
         self.assertNotIn("publish", " ".join(tools))
         self.assertNotIn("delete", " ".join(tools))
+        self.assertIn("only creation path", tools["create_localized_pair"].description)
+        self.assertNotIn("create_page_draft", tools["create_localized_pair"].description)
+        list_schema = tools["list_pages"].parameters
+        self.assertEqual(list_schema["properties"]["limit"].get("maximum"), 20)
+        self.assertIn("pk, not id", list_schema["properties"]["order"]["description"])
+        for schema in list_schema["properties"].values():
+            self.assertNotIn("action", json.dumps(schema))
         asyncio.run(client.aclose())
 
     def test_final_route_rule_excludes_unmatched_and_forbidden_routes(self):

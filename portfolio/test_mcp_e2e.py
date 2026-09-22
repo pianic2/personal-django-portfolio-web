@@ -137,7 +137,7 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         resources = asyncio.run(server.get_resources())
         inventory_names = set(inventory)
         self.assertEqual(inventory_names, {
-            "list_pages", "create_page_draft", "create_localized_pair", "find_page", "get_page",
+            "list_pages", "create_localized_pair", "find_page", "get_page",
             "update_page_draft", "list_page_revisions", "get_page_revision",
             "list_content_types", "get_content_type_schema", "list_images",
             "create_image", "get_image", "update_image", "list_documents",
@@ -154,6 +154,26 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         self.assertNotIn(self.token, contract)
 
         captured_logs = []
+        discovery_calls = 1
+        generation_calls = 0
+
+        def generate_bilingual_article():
+            nonlocal generation_calls
+            generation_calls += 1
+            return {
+                "type": "portfolio.BlogIndexPage",
+                "stable_id": "mcp-draft-index",
+                "it": {
+                    "parent_id": root_id,
+                    "title": "MCP draft index IT",
+                    "slug": "mcp-draft-index-it",
+                },
+                "en": {
+                    "parent_id": root_id,
+                    "title": "MCP draft index EN",
+                    "slug": "mcp-draft-index-en",
+                },
+            }
 
         class TokenCheckingHandler(logging.Handler):
             def emit(self, record):
@@ -172,20 +192,15 @@ class MCPAgentBoundaryTests(TransactionTestCase):
 
             create_result = self._call_mcp_tool(
                 server,
-                "create_page_draft",
-                {
-                    "data": {
-                        "meta": {
-                            "type": "portfolio.BlogIndexPage",
-                            "parent_id": root_id,
-                        },
-                        "title": "MCP draft index",
-                        "slug": "mcp-draft-index",
-                        "stable_id": "mcp-draft-index",
-                    }
-                },
+                "create_localized_pair",
+                generate_bilingual_article(),
             )
-            created_id = create_result["id"]
+            created_id = next(
+                page["id"] for page in create_result["pages"] if page["locale"] == "it"
+            )
+            created_en_id = next(
+                page["id"] for page in create_result["pages"] if page["locale"] == "en"
+            )
             update_result = self._call_mcp_tool(
                 server,
                 "update_page_draft",
@@ -233,13 +248,29 @@ class MCPAgentBoundaryTests(TransactionTestCase):
             image_update_result,
         )
         self.assertTrue(all(self.token not in repr(result) for result in results))
+        self.assertEqual(discovery_calls, 1)
+        self.assertEqual(generation_calls, 1)
+        self.assertEqual(
+            sum(
+                method == "POST" and path == "/api/v3/localized-pairs/"
+                for method, path, _ in upstream_requests
+            ),
+            1,
+        )
+        self.assertEqual(
+            sum(
+                method == "POST" and path == "/api/v3/pages/"
+                for method, path, _ in upstream_requests
+            ),
+            0,
+        )
         self.assertTrue(all(self.token not in entry for entry in captured_logs))
         self.assertTrue(upstream_requests)
         self.assertTrue(all(path.startswith("/api/v3/") for _, path, _ in upstream_requests))
         self.assertTrue(all(authenticated for _, _, authenticated in upstream_requests))
         self.assertTrue(
             any(
-                method == "POST" and path == "/api/v3/pages/"
+                method == "POST" and path == "/api/v3/localized-pairs/"
                 for method, path, _ in upstream_requests
             )
         )
@@ -262,8 +293,12 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         ).json()
         self.assertEqual(public_after, public_before)
         draft = BlogIndexPage.objects.get(pk=created_id)
+        english_draft = BlogIndexPage.objects.get(pk=created_en_id)
         self.assertFalse(draft.live)
+        self.assertFalse(english_draft.live)
         self.assertEqual(draft.title, "MCP revised draft index")
+        self.assertEqual(draft.stable_id, english_draft.stable_id)
+        self.assertEqual(draft.translation_key, english_draft.translation_key)
         self.assertGreater(draft.revisions.count(), 1)
         image = get_image_model().objects.get(title="MCP updated image")
         self.assertEqual(image.collection.name, "Portfolio agent content")
@@ -276,7 +311,7 @@ class MCPAgentBoundaryTests(TransactionTestCase):
 
     def test_publication_bypass_through_mcp_is_rejected_and_not_logged(self):
         openapi = DjangoClient(HTTP_HOST="localhost").get("/api/v3/openapi.json").json()
-        server = create_server(openapi, self.client)
+        create_server(openapi, self.client)
         public_before = DjangoClient(HTTP_HOST="localhost").get(
             f"/api/v3/pages/{self.profile.pk}/"
         ).json()
@@ -293,27 +328,25 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         components_logger.setLevel(logging.DEBUG)
         logging.getLogger().addHandler(handler)
         try:
-            try:
-                self._call_mcp_tool(
-                    server,
-                    "create_page_draft",
-                    {
-                        "data": {
-                            "meta": {
-                                "type": "portfolio.BlogIndexPage",
-                                "parent_id": root_id,
-                                "action": "publish",
-                            },
-                            "title": "Must remain unpublished",
-                            "slug": "mcp-publish-bypass",
-                            "stable_id": "mcp-publish-bypass",
-                        }
+            async def attempt_publication_bypass():
+                await self.client.post(
+                    "/api/v3/pages/",
+                    json={
+                        "meta": {
+                            "type": "portfolio.BlogIndexPage",
+                            "parent_id": root_id,
+                            "action": "publish",
+                        },
+                        "title": "Must remain unpublished",
+                        "slug": "mcp-publish-bypass",
+                        "stable_id": "mcp-publish-bypass",
                     },
                 )
-            except Exception as error:
-                self.assertIn("Publication actions are not available", str(error))
-            else:
-                self.fail("MCP publication bypass was not rejected")
+
+            with self.assertRaisesRegex(
+                ValueError, "Publication actions are not available"
+            ):
+                asyncio.run(attempt_publication_bypass())
         finally:
             logging.getLogger().removeHandler(handler)
             components_logger.setLevel(previous_log_level)
