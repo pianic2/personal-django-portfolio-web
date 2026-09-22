@@ -5,6 +5,7 @@ from wagtail.images import get_image_model
 from wagtail.models import Locale, Site
 
 from .models import BlogIndexPage, BlogPostPage, ProjectPage
+from .test_support import ensure_localized_site_roots
 
 VALID_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
@@ -17,6 +18,7 @@ VALID_PNG = (
 class PublicAPIContractTests(TestCase):
     @classmethod
     def setUpTestData(cls):
+        ensure_localized_site_roots()
         call_command("import_portfolio", verbosity=0)
         cls.root = Site.objects.get(is_default_site=True).root_page
 
@@ -140,9 +142,7 @@ class PublicAPIContractTests(TestCase):
         self.assertEqual(by_slug.json()["count"], 0)
 
     def test_published_blog_contract_is_localized_ordered_and_media_safe(self):
-        index = BlogIndexPage(title="Blog", slug="blog", stable_id="blog")
-        self.root.add_child(instance=index)
-        index.save_revision().publish()
+        index = BlogIndexPage.objects.get(locale__language_code="it", stable_id="blog")
         image = get_image_model().objects.create(
             title="Featured", file=SimpleUploadedFile("featured.png", VALID_PNG)
         )
@@ -211,9 +211,7 @@ class PublicAPIContractTests(TestCase):
         self.assertEqual(missing_locale.status_code, 404)
 
     def test_anonymous_blog_api_excludes_drafts_by_id_and_slug(self):
-        index = BlogIndexPage(title="Blog", slug="blog", stable_id="blog")
-        self.root.add_child(instance=index)
-        index.save_revision().publish()
+        index = BlogIndexPage.objects.get(locale__language_code="it", stable_id="blog")
         draft = BlogPostPage(
             title="Draft post",
             slug="draft-post",
