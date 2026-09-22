@@ -1,4 +1,0 @@
-# Direct runtime dependencies. Exact resolved versions are committed in requirements.lock.
-Django==5.2.17
-Wagtail==8.0
-psycopg[binary]==3.2.10

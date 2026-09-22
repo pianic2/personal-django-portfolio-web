@@ -1,30 +1,64 @@
 # Personal Django Portfolio Web
 
-Django 5.2 LTS and Wagtail 8 backend for the existing React portfolio.
+Django 5.2.17 and Wagtail 8.0 backend for the separate React portfolio
+consumer. The repository owns bilingual editorial content, its JSON API, the
+contact endpoint, and a least-privilege MCP content editor.
 
-## Local bootstrap
+## Requirements and bootstrap
 
-Requires Python 3.13 and PostgreSQL for the supported production configuration.
-SQLite is the local default so a clean checkout can run the framework baseline
-without external infrastructure.
+Use Python `>=3.13,<3.14` and `uv`. SQLite is the local default; PostgreSQL is
+the production configuration.
 
 ```bash
-python3.13 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.lock
+uv sync --frozen
 cp .env.example .env
-python manage.py migrate
-python manage.py check
-python manage.py runserver
+uv run python manage.py migrate
+uv run python manage.py check
+uv run python manage.py runserver
 ```
 
-The Wagtail administration is at `/admin/`. Create a local administrator with
-`python manage.py createsuperuser`.
+Create an administrator with `uv run python manage.py createsuperuser`.
+The canonical repository gate is `bash scripts/quality.sh`; it runs Ruff,
+Django checks, migration drift validation, and the full pytest suite.
 
+## Configuration and security
+
+The optional root `.env` file is loaded locally and must not be committed.
 `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS` are required when
-`DJANGO_DEBUG=false`. Set `DJANGO_DATABASE_URL` to a PostgreSQL URL in deployed
-environments, for example `postgresql://user:password@host:5432/database`.
+`DJANGO_DEBUG=false`. `DJANGO_DATABASE_URL` accepts SQLite or PostgreSQL URLs.
+Email, CORS, production HTTPS, and MCP settings are documented in
+[Development and configuration](docs/development.md). Never put API tokens or
+other secrets in the repository, browser, logs, or agent-visible responses.
 
-The shared execution policy lives in the PDPW Confluence runbook; repository
-documentation only records commands needed to reproduce this implementation.
+## Admin, content, and APIs
+
+- `/admin/` is Wagtail administration for pages, revisions, publication,
+  images, documents, and page permissions.
+- `/django-admin/` is Django administration for standalone capability data.
+- `/api/v3/openapi.json` and `/api/v3/docs/` expose the Wagtail API contract.
+- `/api/contact/` accepts the validated public contact form.
+- `uv run python manage.py import_portfolio` imports the repeatable bilingual
+  canonical content snapshot.
+- `uv run python manage.py configure_agent_account` provisions the scoped
+  non-staff content account.
+- `uv run python -m portfolio.mcp_server` starts the server-side FastMCP
+  adapter when `WAGTAIL_AGENT_API_URL` and `WAGTAIL_AGENT_API_TOKEN` are set.
+
+The MCP surface supports selected page drafts/revisions, localized-pair
+creation, schemas, and image/document operations. It rejects publication
+actions and does not expose delete operations. See [API and integration
+contracts](docs/api.md) for routes, inputs, outputs, errors, and boundaries.
+
+## Documentation map
+
+- [Architecture and domain overview](docs/architecture.md)
+- [Models and content model](docs/models.md)
+- [API and integration contracts](docs/api.md)
+- [Development and configuration](docs/development.md)
+- [Testing and validation](docs/testing.md)
+- [Operations and management commands](docs/operations.md)
+- [Documentation inventory](docs/inventory.md)
+
+The backend does not contain the React frontend or a deployment platform
+configuration. Repository execution policy remains in `AGENTS.md`; project
+governance remains in Jira/Confluence.

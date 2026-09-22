@@ -1,0 +1,22 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Personal Django Portfolio') }}{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="icon" type="image/svg+xml" href="{% static 'portfolio/portfolio-mark.svg' %}">
+  <style>
+    #branding h1 a { display: inline-flex; align-items: center; gap: .55rem; }
+    #branding h1 a::before {
+      content: "";
+      width: 1.65rem;
+      height: 1.65rem;
+      background: url("{% static 'portfolio/portfolio-mark.svg' %}") center / contain no-repeat;
+    }
+  </style>
+{% endblock %}
+
+{% block branding %}
+  <h1 id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_('Personal Django Portfolio') }}</a></h1>
+{% endblock %}
