@@ -103,6 +103,7 @@ class LocalizedPairAPITests(TestCase):
             **self.auth,
         )
         self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("parent_id", response.json()["detail"])
         self.assertFalse(BlogIndexPage.objects.filter(stable_id="rollback-test").exists())
 
         created = self.client.post(
@@ -121,46 +122,28 @@ class LocalizedPairAPITests(TestCase):
         self.assertEqual(duplicate.status_code, 400, duplicate.content)
         self.assertEqual(BlogIndexPage.objects.filter(stable_id="duplicate-test").count(), 2)
 
-    def test_blog_post_resolves_localized_parent_by_stable_identity(self):
-        response = self.client.post(
-            "/api/v3/localized-pairs/",
-            data=json.dumps(self.blog_post_payload()),
-            content_type="application/json",
-            **self.auth,
-        )
-        self.assertEqual(response.status_code, 201, response.content)
-        pages = BlogPostPage.objects.filter(stable_id="post-test").select_related("locale")
-        self.assertEqual(pages.count(), 2)
-        for page in pages:
-            self.assertEqual(page.get_parent().specific_class, BlogIndexPage)
-            self.assertEqual(page.get_parent().specific.stable_id, "blog")
-            self.assertEqual(page.get_parent().locale_id, page.locale_id)
-        self.assertEqual(
-            {page.translation_key for page in pages},
-            {next(iter(pages)).translation_key},
-        )
-
-    def test_blog_post_missing_stable_parent_is_actionable_and_atomic(self):
-        payload = self.blog_post_payload("missing-parent")
-        payload["parent_stable_id"] = "missing-blog"
+    def test_each_locale_parent_id_is_required_by_the_machine_contract(self):
+        payload = self.payload("missing-parent")
+        del payload["en"]["parent_id"]
         response = self.client.post(
             "/api/v3/localized-pairs/",
             data=json.dumps(payload),
             content_type="application/json",
             **self.auth,
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("parent_stable_id", response.json()["detail"])
-        self.assertFalse(BlogPostPage.objects.filter(stable_id="missing-parent").exists())
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"], "Validation failed")
 
-    def test_blog_post_rejects_numeric_parent_ids(self):
-        payload = self.blog_post_payload("numeric-parent")
-        payload["it"]["parent_id"] = self.root_id
+    def test_unsupported_locale_owned_fields_are_rejected_before_mutation(self):
+        payload = self.payload("unsupported-field")
+        payload["it"]["locale"] = "it"
+        payload["en"]["status"] = "draft"
         response = self.client.post(
             "/api/v3/localized-pairs/",
             data=json.dumps(payload),
             content_type="application/json",
             **self.auth,
         )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Unsupported fields", response.json()["detail"])
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"], "Validation failed")
+        self.assertFalse(BlogIndexPage.objects.filter(stable_id="unsupported-field").exists())
