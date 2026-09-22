@@ -559,6 +559,19 @@ class PortfolioImportTests(TestCase):
         call_command("import_portfolio", "--json", stdout=output)
         from wagtail.models import Locale
 
+        expected_project_ids = tuple(
+            project["id"] for project in CANONICAL["shared"]["projects"]
+        )
+        expected_claim_count = sum(
+            len(project["claims"])
+            for locale in ("it", "en")
+            for project in CANONICAL["locales"][locale]["projects"]
+        )
+        expected_evidence_count = sum(
+            len(project["evidence"])
+            for locale in ("it", "en")
+            for project in CANONICAL["locales"][locale]["projects"]
+        )
         italian_locale = Locale.objects.get(language_code="it")
         english_locale = Locale.objects.get(language_code="en")
         report = json.loads(output.getvalue())
@@ -572,17 +585,13 @@ class PortfolioImportTests(TestCase):
         )
         self.assertEqual(
             len(report["project_identifiers"]),
-            6,
+            len(expected_project_ids) * 2,
         )
         self.assertEqual(
             {(item["stable_id"], item["locale"]) for item in report["project_identifiers"]},
             {
                 (project_id, locale)
-                for project_id in (
-                    "homeedge-ai-platform",
-                    "its-library-api-laravel",
-                    "node-list-manager",
-                )
+                for project_id in expected_project_ids
                 for locale in ("it", "en")
             },
         )
@@ -593,18 +602,14 @@ class PortfolioImportTests(TestCase):
             "evidence": ProjectEvidence.objects.count(),
         }
         self.assertEqual(first_counts["profiles"], 2)
-        self.assertEqual(first_counts["projects"], 6)
-        self.assertEqual(first_counts["claims"], 16)
-        self.assertEqual(first_counts["evidence"], 20)
+        self.assertEqual(first_counts["projects"], len(expected_project_ids) * 2)
+        self.assertEqual(first_counts["claims"], expected_claim_count)
+        self.assertEqual(first_counts["evidence"], expected_evidence_count)
         self.assertEqual(
             set(ProjectPage.objects.values_list("stable_id", "locale__language_code")),
             {
                 (project_id, locale)
-                for project_id in (
-                    "homeedge-ai-platform",
-                    "its-library-api-laravel",
-                    "node-list-manager",
-                )
+                for project_id in expected_project_ids
                 for locale in ("it", "en")
             },
         )
@@ -616,9 +621,10 @@ class PortfolioImportTests(TestCase):
                 ("its-library-api-laravel", "its-library-api-laravel"),
                 ("node-list-manager", "gestore-liste-node"),
                 ("node-list-manager", "node-list-manager"),
+                ("tradingagents", "tradingagents"),
             },
         )
-        for stable_id in ("homeedge-ai-platform", "its-library-api-laravel", "node-list-manager"):
+        for stable_id in expected_project_ids:
             variants = ProjectPage.objects.filter(stable_id=stable_id).order_by("locale_id")
             self.assertEqual({variant.locale.language_code for variant in variants}, {"it", "en"})
             self.assertEqual(

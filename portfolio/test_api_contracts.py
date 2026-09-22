@@ -140,9 +140,7 @@ class PublicAPIContractTests(TestCase):
         self.assertEqual(by_slug.json()["count"], 0)
 
     def test_published_blog_contract_is_localized_ordered_and_media_safe(self):
-        index = BlogIndexPage(title="Blog", slug="blog", stable_id="blog")
-        self.root.add_child(instance=index)
-        index.save_revision().publish()
+        index = BlogIndexPage.objects.get(locale__language_code="it", stable_id="blog")
         image = get_image_model().objects.create(
             title="Featured", file=SimpleUploadedFile("featured.png", VALID_PNG)
         )
@@ -211,9 +209,7 @@ class PublicAPIContractTests(TestCase):
         self.assertEqual(missing_locale.status_code, 404)
 
     def test_anonymous_blog_api_excludes_drafts_by_id_and_slug(self):
-        index = BlogIndexPage(title="Blog", slug="blog", stable_id="blog")
-        self.root.add_child(instance=index)
-        index.save_revision().publish()
+        index = BlogIndexPage.objects.get(locale__language_code="it", stable_id="blog")
         draft = BlogPostPage(
             title="Draft post",
             slug="draft-post",
