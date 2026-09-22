@@ -110,6 +110,8 @@ class Command(BaseCommand):
                 slug="blog",
                 stable_id="blog",
             )
+            blog.refresh_from_db()
+            blog.save_revision().publish()
 
         for capability in SHARED["capabilities"]:
             obj, _ = Capability.objects.update_or_create(

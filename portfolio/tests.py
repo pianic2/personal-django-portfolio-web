@@ -659,6 +659,14 @@ class PortfolioImportTests(TestCase):
 
     def test_import_publishes_editable_revisions(self):
         call_command("import_portfolio", stdout=None)
+        self.assertEqual(
+            set(
+                BlogIndexPage.objects.filter(stable_id="blog").values_list(
+                    "locale__language_code", "live"
+                )
+            ),
+            {("it", True), ("en", True)},
+        )
         self.assertTrue(ProfilePage.objects.filter(locale__language_code="en", live=True).exists())
         project = ProjectPage.objects.get(
             stable_id="homeedge-ai-platform", locale__language_code="en"

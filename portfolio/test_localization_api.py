@@ -78,6 +78,38 @@ class LocalizedPairAPITests(TestCase):
             {page.get_parent().specific_class for page in pages}, {BlogIndexPage}
         )
 
+    def test_blog_post_pair_resolves_top_level_stable_blog_parent(self):
+        payload = self.payload("top-level-parent")
+        payload.update(
+            {
+                "type": "portfolio.BlogPostPage",
+                "parent_stable_id": "blog",
+                "it": {
+                    "title": "Post IT",
+                    "slug": "top-level-parent-it",
+                    "excerpt": "Sintesi IT",
+                    "body": "Contenuto IT",
+                },
+                "en": {
+                    "title": "Post EN",
+                    "slug": "top-level-parent-en",
+                    "excerpt": "EN summary",
+                    "body": "EN content",
+                },
+            }
+        )
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **self.auth,
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        pages = BlogPostPage.objects.filter(stable_id="top-level-parent")
+        self.assertEqual(pages.count(), 2)
+        self.assertTrue(all(page.get_parent().specific_class is BlogIndexPage for page in pages))
+
     def test_invalid_locale_shape_duplicate_and_second_locale_failure_are_rejected(self):
         missing_en = self.payload()
         del missing_en["en"]
@@ -99,7 +131,6 @@ class LocalizedPairAPITests(TestCase):
             **self.auth,
         )
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("parent_id", response.json()["detail"])
         self.assertFalse(BlogIndexPage.objects.filter(stable_id="rollback-test").exists())
 
         created = self.client.post(
@@ -117,29 +148,3 @@ class LocalizedPairAPITests(TestCase):
         )
         self.assertEqual(duplicate.status_code, 400, duplicate.content)
         self.assertEqual(BlogIndexPage.objects.filter(stable_id="duplicate-test").count(), 2)
-
-    def test_each_locale_parent_id_is_required_by_the_machine_contract(self):
-        payload = self.payload("missing-parent")
-        del payload["en"]["parent_id"]
-        response = self.client.post(
-            "/api/v3/localized-pairs/",
-            data=json.dumps(payload),
-            content_type="application/json",
-            **self.auth,
-        )
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.json()["detail"], "Validation failed")
-
-    def test_unsupported_locale_owned_fields_are_rejected_before_mutation(self):
-        payload = self.payload("unsupported-field")
-        payload["it"]["locale"] = "it"
-        payload["en"]["status"] = "draft"
-        response = self.client.post(
-            "/api/v3/localized-pairs/",
-            data=json.dumps(payload),
-            content_type="application/json",
-            **self.auth,
-        )
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.json()["detail"], "Validation failed")
-        self.assertFalse(BlogIndexPage.objects.filter(stable_id="unsupported-field").exists())

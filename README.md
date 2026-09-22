@@ -26,8 +26,9 @@ Django checks, migration drift validation, and the full pytest suite.
 
 The optional root `.env` file is loaded locally and must not be committed.
 `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS` are required when
-`DJANGO_DEBUG=false`. `DJANGO_DATABASE_URL` is required and accepts only
-PostgreSQL URLs.
+`DJANGO_DEBUG=false`. `DJANGO_DATABASE_URL` defaults to the local SQLite
+database and accepts SQLite or PostgreSQL URLs; production deployments should
+provide a PostgreSQL URL.
 Email, CORS, production HTTPS, and MCP settings are documented in
 [Development and configuration](docs/development.md). Never put API tokens or
 other secrets in the repository, browser, logs, or agent-visible responses.

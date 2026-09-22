@@ -25,7 +25,7 @@ Do not commit secrets. The supported variables are:
 | `DJANGO_DEBUG` | Boolean; defaults to `true`. |
 | `DJANGO_SECRET_KEY` | Required in production; must be strong. A development-only fallback exists only with debug enabled. |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hosts; required when debug is false. |
-| `DJANGO_DATABASE_URL` | Required PostgreSQL URL, for example `postgresql://portfolio:portfolio@localhost:5432/portfolio`. |
+| `DJANGO_DATABASE_URL` | Optional database URL; defaults to local SQLite (`db.sqlite3`). Production should use PostgreSQL, for example `postgresql://portfolio:portfolio@localhost:5432/portfolio`. |
 | `DJANGO_CORS_ALLOWED_ORIGINS` | Comma-separated origins; defaults to local React and the GitHub Pages consumer. |
 | `DJANGO_BASE_URL` | Wagtail admin base URL; defaults to `http://localhost:8000`. |
 | `DJANGO_EMAIL_BACKEND`, `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_HOST_USER`, `DJANGO_EMAIL_HOST_PASSWORD`, `DJANGO_EMAIL_USE_TLS`, `DJANGO_DEFAULT_FROM_EMAIL` | Email transport settings. Console email is the local default. |
