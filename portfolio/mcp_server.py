@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import copy
 import json
 import os
 from collections.abc import Mapping
@@ -13,6 +14,20 @@ from urllib.parse import urljoin
 import httpx
 from fastmcp import FastMCP
 from fastmcp.server.openapi import MCPType, RouteMap
+
+SUPPORTED_PAGE_ORDERING = (
+    "random",
+    "pk",
+    "-pk",
+    "title",
+    "-title",
+    "slug",
+    "-slug",
+    "first_published_at",
+    "-first_published_at",
+    "locale",
+    "-locale",
+)
 
 
 class _BearerTokenAuth(httpx.Auth):
@@ -118,7 +133,6 @@ def _contains_publish_action(value: Any) -> bool:
 def _route_maps() -> list[RouteMap]:
     allowed = [
         ("GET", r"^/api/v3/pages/$"),
-        ("POST", r"^/api/v3/pages/$"),
         ("POST", r"^/api/v3/localized-pairs/$"),
         ("GET", r"^/api/v3/pages/find/$"),
         ("GET", r"^/api/v3/pages/\{page_id\}/$"),
@@ -141,6 +155,48 @@ def _route_maps() -> list[RouteMap]:
     ]
 
 
+def _prepare_agent_openapi_spec(openapi_spec: dict[str, Any]) -> dict[str, Any]:
+    """Expose only deterministic, agent-safe parts of the Wagtail contract."""
+    spec = copy.deepcopy(openapi_spec)
+    page_list = spec.get("paths", {}).get("/api/v3/pages/", {}).get("get", {})
+    for parameter in page_list.get("parameters", []):
+        if parameter.get("name") == "limit":
+            schema = parameter.setdefault("schema", {})
+            schema["maximum"] = 20
+            schema["description"] = "Maximum 20 items per call."
+        elif parameter.get("name") == "order":
+            schema = parameter.setdefault("schema", {})
+            schema.clear()
+            schema.update({
+                "default": [],
+                "description": (
+                    "Supported values: pk, title, slug, first_published_at, locale "
+                    "and their '-' descending forms; use pk, not id."
+                ),
+                "items": {"enum": list(SUPPORTED_PAGE_ORDERING), "type": "string"},
+                "type": "array",
+            })
+
+    for name, schema in spec.get("components", {}).get("schemas", {}).items():
+        if name.endswith(("CreateMetaSchema", "PatchMetaSchema")):
+            schema.get("properties", {}).pop("action", None)
+
+    localized_create = (
+        spec.get("paths", {}).get("/api/v3/localized-pairs/", {}).get("post", {})
+    )
+    localized_create.update({
+        "summary": "CANONICAL: create one IT/EN localized page pair",
+        "description": (
+            "Use this as the only creation path for BlogIndexPage, BlogPostPage, "
+            "ProfilePage and ProjectPage. Supply both locale payloads from the same "
+            "article-generation result and make exactly one call. The operation is "
+            "atomic and creates draft variants in one Wagtail translation family. "
+            "Do not use generic page creation; it is intentionally unavailable."
+        ),
+    })
+    return spec
+
+
 def _customize_component(_route: Any, component: Any) -> None:
     """Keep Wagtail's heterogeneous page response valid across MCP clients."""
     if component.name == "get_page":
@@ -149,6 +205,7 @@ def _customize_component(_route: Any, component: Any) -> None:
 
 def create_server(openapi_spec: dict[str, Any], client: httpx.AsyncClient) -> FastMCP:
     """Build the MCP components from the supplied live Wagtail OpenAPI document."""
+    openapi_spec = _prepare_agent_openapi_spec(openapi_spec)
     for hook in (_reject_publication_bypass_async, _encode_media_upload):
         if hook not in client.event_hooks["request"]:
             client.event_hooks["request"].append(hook)
@@ -170,7 +227,6 @@ def create_server(openapi_spec: dict[str, Any], client: httpx.AsyncClient) -> Fa
         mcp_component_fn=_customize_component,
         mcp_names={
             "pages_list": "list_pages",
-            "pages_create": "create_page_draft",
             "localized_pairs_create": "create_localized_pair",
             "pages_find": "find_page",
             "pages_detail": "get_page",
