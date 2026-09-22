@@ -3,20 +3,6 @@ name = "personal-django-portfolio-web"
 version = "0.1.0"
 description = "Django and Wagtail backend for the personal portfolio."
 requires-python = ">=3.13,<3.14"
-dependencies = [
-    "Django==5.2.17",
-    "Wagtail==8.0",
-    "django-cors-headers==4.9.0",
-    "djangorestframework>=3.18,<4",
-    "fastmcp>=2.14,<3",
-    "psycopg[binary]==3.2.10",
-]
-
-[dependency-groups]
-dev = [
-    "pytest-django>=4.11,<5",
-    "ruff>=0.12,<0.13",
-]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "portfolio.settings"
@@ -28,6 +14,3 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
-
-[tool.ruff.lint.per-file-ignores]
-"portfolio/migrations/*.py" = ["E501"]
