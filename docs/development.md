@@ -7,6 +7,7 @@ Use Python `>=3.13,<3.14` and `uv`. From a clean clone:
 ```bash
 uv sync --frozen
 cp .env.example .env
+docker compose up -d postgres
 uv run python manage.py migrate
 uv run python manage.py check
 ```
@@ -24,7 +25,7 @@ Do not commit secrets. The supported variables are:
 | `DJANGO_DEBUG` | Boolean; defaults to `true`. |
 | `DJANGO_SECRET_KEY` | Required in production; must be strong. A development-only fallback exists only with debug enabled. |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hosts; required when debug is false. |
-| `DJANGO_DATABASE_URL` | `sqlite:///db.sqlite3` by default, or a `sqlite`, `postgres`, or `postgresql` URL. |
+| `DJANGO_DATABASE_URL` | Required PostgreSQL URL, for example `postgresql://portfolio:portfolio@localhost:5432/portfolio`. |
 | `DJANGO_CORS_ALLOWED_ORIGINS` | Comma-separated origins; defaults to local React and the GitHub Pages consumer. |
 | `DJANGO_BASE_URL` | Wagtail admin base URL; defaults to `http://localhost:8000`. |
 | `DJANGO_EMAIL_BACKEND`, `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_HOST_USER`, `DJANGO_EMAIL_HOST_PASSWORD`, `DJANGO_EMAIL_USE_TLS`, `DJANGO_DEFAULT_FROM_EMAIL` | Email transport settings. Console email is the local default. |
@@ -34,9 +35,10 @@ Do not commit secrets. The supported variables are:
 | `WAGTAIL_AGENT_API_URL` | Base URL used by the MCP server. |
 | `WAGTAIL_AGENT_API_TOKEN` | Server-side bearer token used by the MCP server; never expose or commit it. |
 
-SQLite is the local bootstrap database. PostgreSQL is the production database
-and the relevant CI/runtime validation target. The database URL parser rejects
-unsupported schemes and incomplete PostgreSQL URLs.
+PostgreSQL is the only supported database backend. The repository-owned
+Compose service uses PostgreSQL 18.4, matching CI. The database URL parser
+rejects missing, unsupported, and incomplete PostgreSQL URLs; it never falls
+back to another database backend.
 
 ## Migrations and quality
 

@@ -11,7 +11,7 @@ repository.
 ## Runtime shape
 
 - `portfolio.settings` configures Django, Wagtail, REST Framework, CORS,
-  SQLite/PostgreSQL selection, email delivery, and security defaults.
+  PostgreSQL, email delivery, and security defaults.
 - `portfolio.urls` mounts Django admin, Wagtail admin, documents, Wagtail API
   v3, the localized-pair API, and contact delivery.
 - Wagtail `Page` models represent localized editorial content. Standalone

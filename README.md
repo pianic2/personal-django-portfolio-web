@@ -6,12 +6,13 @@ contact endpoint, and a least-privilege MCP content editor.
 
 ## Requirements and bootstrap
 
-Use Python `>=3.13,<3.14` and `uv`. SQLite is the local default; PostgreSQL is
-the production configuration.
+Use Python `>=3.13,<3.14` and `uv`. PostgreSQL is the only supported database
+backend for local development, tests, and production-oriented execution.
 
 ```bash
 uv sync --frozen
 cp .env.example .env
+docker compose up -d postgres
 uv run python manage.py migrate
 uv run python manage.py check
 uv run python manage.py runserver
@@ -25,7 +26,8 @@ Django checks, migration drift validation, and the full pytest suite.
 
 The optional root `.env` file is loaded locally and must not be committed.
 `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS` are required when
-`DJANGO_DEBUG=false`. `DJANGO_DATABASE_URL` accepts SQLite or PostgreSQL URLs.
+`DJANGO_DEBUG=false`. `DJANGO_DATABASE_URL` is required and accepts only
+PostgreSQL URLs.
 Email, CORS, production HTTPS, and MCP settings are documented in
 [Development and configuration](docs/development.md). Never put API tokens or
 other secrets in the repository, browser, logs, or agent-visible responses.

@@ -57,27 +57,27 @@ if not DEBUG and not ALLOWED_HOSTS:
 
 
 def database_config() -> dict[str, object]:
-    database_url = os.environ.get("DJANGO_DATABASE_URL", "sqlite:///db.sqlite3")
-    parsed = urlparse(database_url)
-    if parsed.scheme == "sqlite":
-        path = unquote(parsed.path)
-        name = (
-            BASE_DIR / path.lstrip("/")
-            if path and not path.startswith("//")
-            else BASE_DIR / "db.sqlite3"
+    database_url = os.environ.get("DJANGO_DATABASE_URL")
+    if not database_url:
+        raise RuntimeError(
+            "DJANGO_DATABASE_URL is required and must be a PostgreSQL URL."
         )
-        return {"ENGINE": "django.db.backends.sqlite3", "NAME": name}
+    parsed = urlparse(database_url)
     if parsed.scheme not in {"postgres", "postgresql"}:
-        raise RuntimeError("DJANGO_DATABASE_URL must use sqlite, postgres, or postgresql.")
+        raise RuntimeError("DJANGO_DATABASE_URL must use the postgres or postgresql scheme.")
     if not parsed.hostname or not parsed.path:
         raise RuntimeError("DJANGO_DATABASE_URL must include a PostgreSQL host and database name.")
+    try:
+        port = parsed.port or 5432
+    except ValueError as exc:
+        raise RuntimeError("DJANGO_DATABASE_URL must contain a valid PostgreSQL port.") from exc
     return {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": parsed.path.lstrip("/"),
         "USER": unquote(parsed.username or ""),
         "PASSWORD": unquote(parsed.password or ""),
         "HOST": parsed.hostname,
-        "PORT": parsed.port or 5432,
+        "PORT": port,
     }
 
 

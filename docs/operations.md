@@ -2,6 +2,12 @@
 
 ## Canonical content import
 
+Start the repository-owned PostgreSQL service before running Django commands:
+
+```bash
+docker compose up -d postgres
+```
+
 After migrations, run:
 
 ```bash
