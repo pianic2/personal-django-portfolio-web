@@ -184,14 +184,38 @@ def _prepare_agent_openapi_spec(openapi_spec: dict[str, Any]) -> dict[str, Any]:
     localized_create = (
         spec.get("paths", {}).get("/api/v3/localized-pairs/", {}).get("post", {})
     )
+    localized_schema = (
+        spec.get("components", {})
+        .get("schemas", {})
+        .get("LocalizedPagePairCreate", {})
+    )
+    parent_stable_schema = localized_schema.get("properties", {}).get("parent_stable_id")
+    if parent_stable_schema is not None:
+        parent_stable_schema["description"] = (
+            "Required when type is portfolio.BlogPostPage. Use the stable editorial "
+            "identity (for example 'blog'); the server resolves the IT and EN "
+            "BlogIndexPage parents by locale. Never send numeric parent_id values."
+        )
+    for locale in ("it", "en"):
+        locale_schema = localized_schema.get("properties", {}).get(locale)
+        if locale_schema is not None:
+            locale_schema["description"] = (
+                "Locale-owned writable fields. For BlogPostPage do not include "
+                "parent_id; parent_stable_id is resolved server-side."
+            )
     localized_create.update({
         "summary": "CANONICAL: create one IT/EN localized page pair",
         "description": (
             "Use this as the only creation path for BlogIndexPage, BlogPostPage, "
             "ProfilePage and ProjectPage. Supply both locale payloads from the same "
-            "article-generation result and make exactly one call. The operation is "
-            "atomic and creates draft variants in one Wagtail translation family. "
-            "Do not use generic page creation; it is intentionally unavailable."
+            "article-generation result and make exactly one call. For BlogPostPage, "
+            "call create_localized_pair(type='portfolio.BlogPostPage', "
+            "stable_id=..., parent_stable_id='blog', it=..., en=...); numeric "
+            "parent_id values are not part of the agent contract. The server resolves "
+            "the localized BlogIndexPage parents and validates type, locale, and add "
+            "permission. The operation is atomic and creates draft variants in one "
+            "Wagtail translation family. Do not use generic page creation; it is "
+            "intentionally unavailable."
         ),
     })
     return spec

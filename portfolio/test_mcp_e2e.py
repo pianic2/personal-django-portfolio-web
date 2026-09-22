@@ -75,6 +75,18 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         self.profile = ProfilePage.objects.get(
             locale=Locale.objects.get(language_code="en"), stable_id="profile"
         )
+        root = Site.objects.get(is_default_site=True).root_page
+        for code, slug in (("it", "blog-it"), ("en", "blog-en")):
+            locale = Locale.objects.get(language_code=code)
+            if not BlogIndexPage.objects.filter(locale=locale, stable_id="blog").exists():
+                root.add_child(
+                    instance=BlogIndexPage(
+                        locale=locale,
+                        stable_id="blog",
+                        title=f"Blog {code.upper()}",
+                        slug=slug,
+                    )
+                )
 
         async def dispatch_to_wagtail(request):
             django_client = DjangoClient(HTTP_HOST="localhost")
@@ -166,6 +178,7 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         global_discovery_calls = 0
         scoped_discovery_calls = 0
         generation_calls = 0
+        generated_payload = None
 
         def generate_bilingual_article(parent_ids):
             nonlocal generation_calls
@@ -188,6 +201,7 @@ class MCPAgentBoundaryTests(TransactionTestCase):
                     "body": "English article body.",
                 },
             }
+            return generated_payload
 
         class TokenCheckingHandler(logging.Handler):
             def emit(self, record):
@@ -278,6 +292,14 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         self.assertEqual(generation_calls, 1)
         self.assertEqual(
             sum(
+                method == "GET" and path == "/api/v3/pages/"
+                for method, path, _ in upstream_requests
+            ),
+            0,
+        )
+        self.assertNotIn("parent_id", json.dumps(generated_payload))
+        self.assertEqual(
+            sum(
                 method == "POST" and path == "/api/v3/localized-pairs/"
                 for method, path, _ in upstream_requests
             ),
@@ -325,6 +347,10 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         self.assertEqual(draft.title, "MCP revised draft index")
         self.assertEqual(draft.stable_id, english_draft.stable_id)
         self.assertEqual(draft.translation_key, english_draft.translation_key)
+        self.assertEqual(draft.get_parent().specific_class, BlogIndexPage)
+        self.assertEqual(english_draft.get_parent().specific_class, BlogIndexPage)
+        self.assertEqual(draft.get_parent().locale_id, draft.locale_id)
+        self.assertEqual(english_draft.get_parent().locale_id, english_draft.locale_id)
         self.assertGreater(draft.revisions.count(), 1)
         image = get_image_model().objects.get(title="MCP updated image")
         self.assertEqual(image.collection.name, "Portfolio agent content")

@@ -47,6 +47,8 @@ class MCPServerTests(SimpleTestCase):
         self.assertNotIn("publish", " ".join(tools))
         self.assertNotIn("delete", " ".join(tools))
         self.assertIn("only creation path", tools["create_localized_pair"].description)
+        self.assertIn("parent_stable_id", tools["create_localized_pair"].description)
+        self.assertIn("numeric parent_id", tools["create_localized_pair"].description)
         self.assertNotIn("create_page_draft", tools["create_localized_pair"].description)
         pair_schema = tools["create_localized_pair"].parameters
         locale_schema = pair_schema["$defs"]["LocalizedPagePayload"]

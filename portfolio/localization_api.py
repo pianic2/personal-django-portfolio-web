@@ -99,7 +99,8 @@ def _create_variant(
     *,
     model: type[Page],
     locale: Locale,
-    parent_id: int,
+    parent_id: int | None,
+    parent_stable_id: str | None,
     stable_id: str,
     values: dict[str, Any],
     translation_key: Any | None,
@@ -120,10 +121,11 @@ def _create_variant(
             {"stable_id": f"A {locale.language_code} page already uses this stable ID."}
         )
 
-    unknown = set(values) - _page_fields(model) - {"parent_id"}
+    allowed_parent_fields = set() if model is BlogPostPage else {"parent_id"}
+    unknown = set(values) - _page_fields(model) - allowed_parent_fields
     if unknown:
         raise ValidationError({"data": f"Unsupported fields: {', '.join(sorted(unknown))}."})
-    if "parent_id" not in values:
+    if model is not BlogPostPage and "parent_id" not in values:
         raise ValidationError({"parent_id": "This field is required for each locale."})
     page = model(locale=locale, stable_id=stable_id)
     if translation_key is not None:
