@@ -88,7 +88,8 @@ class Command(BaseCommand):
             "links": 0,
         }
 
-        _sync_blog_index(root, locales)
+        localized_roots = _ensure_localized_site_roots(root, locales)
+        _sync_blog_index(localized_roots, locales)
 
         for capability in SHARED["capabilities"]:
             obj, _ = Capability.objects.update_or_create(
@@ -213,13 +214,26 @@ class Command(BaseCommand):
         self.stdout.write(output if options["as_json"] else "Imported " + output)
 
 
-def _sync_blog_index(root, locales):
+def _ensure_localized_site_roots(root, locales):
+    """Ensure the canonical site root has both locale translations."""
+
+    localized_roots = {}
+    for code in LOCALES:
+        locale = locales[code]
+        if root.locale_id == locale.id:
+            localized_roots[code] = root
+        elif root.has_translation(locale):
+            localized_roots[code] = root.get_translation(locale)
+        else:
+            localized_roots[code] = root.copy_for_translation(
+                locale=locale, copy_parents=True
+            )
+    return localized_roots
+
+
+def _sync_blog_index(localized_roots, locales):
     """Reconcile the canonical bilingual BlogIndex container."""
 
-    localized_roots = {
-        code: root.get_translation(locales[code])
-        for code in LOCALES
-    }
     variants = {}
     for code in LOCALES:
         parent = localized_roots[code]

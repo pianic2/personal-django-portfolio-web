@@ -66,7 +66,11 @@ def database_config() -> dict[str, object]:
             if path and not path.startswith("//")
             else BASE_DIR / "db.sqlite3"
         )
-        return {"ENGINE": "django.db.backends.sqlite3", "NAME": name}
+        return {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": name,
+            "OPTIONS": {"init_command": "PRAGMA temp_store=MEMORY"},
+        }
     if parsed.scheme not in {"postgres", "postgresql"}:
         raise RuntimeError("DJANGO_DATABASE_URL must use sqlite, postgres, or postgresql.")
     if not parsed.hostname or not parsed.path:

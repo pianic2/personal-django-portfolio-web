@@ -7,6 +7,7 @@ from types import ModuleType
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
+from django.db import connection
 from django.test import TestCase, override_settings
 from django.urls import clear_url_caches, path, reverse
 from django.utils import timezone
@@ -529,6 +530,32 @@ class PortfolioImportTests(TestCase):
         )
         self.assertEqual(
             set(blog_indexes.values_list("slug", flat=True)), {"blog-it", "blog-en"}
+        )
+
+    def test_import_bootstraps_missing_site_root_translation(self):
+        site_root = Site.objects.get(is_default_site=True).root_page
+        english = Locale.objects.get(language_code="en")
+        site_root.get_translation(english).delete()
+
+        call_command("import_portfolio", stdout=None)
+
+        localized_roots = {
+            code: site_root.get_translation(Locale.objects.get(language_code=code))
+            for code in ("it", "en")
+        }
+        blog_indexes = BlogIndexPage.objects.filter(stable_id="blog")
+        self.assertEqual(blog_indexes.count(), 2)
+        self.assertEqual(
+            {page.locale.language_code: page.get_parent().pk for page in blog_indexes},
+            {code: root.pk for code, root in localized_roots.items()},
+        )
+        validate_portfolio_integrity()
+
+    def test_sqlite_uses_memory_temp_store_for_atomic_localized_writes(self):
+        self.assertEqual(connection.vendor, "sqlite")
+        self.assertEqual(
+            connection.settings_dict["OPTIONS"]["init_command"],
+            "PRAGMA temp_store=MEMORY",
         )
 
     def test_import_reconciles_missing_blog_translation_idempotently(self):
