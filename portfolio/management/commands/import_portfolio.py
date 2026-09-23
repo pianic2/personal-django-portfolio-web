@@ -80,7 +80,7 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
-        root = Site.objects.get(is_default_site=True).root_page
+        site = Site.objects.get(is_default_site=True)
         locales = {code: Locale.objects.get_or_create(language_code=code)[0] for code in LOCALES}
         report = {
             "locales": list(LOCALES),
@@ -94,7 +94,8 @@ class Command(BaseCommand):
             "links": 0,
         }
 
-        localized_roots = _ensure_localized_site_roots(root, locales)
+        localized_roots = _ensure_localized_site_roots(site, locales)
+        root = localized_roots["it"]
         _sync_blog_index(localized_roots, locales)
 
         for capability in SHARED["capabilities"]:
@@ -220,8 +221,20 @@ class Command(BaseCommand):
         self.stdout.write(output if options["as_json"] else "Imported " + output)
 
 
-def _ensure_localized_site_roots(root, locales):
+def _ensure_localized_site_roots(site, locales):
     """Ensure the canonical site root has both locale translations."""
+
+    root = site.root_page
+    italian_locale = locales["it"]
+    if root.locale_id != italian_locale.id:
+        root = (
+            root.get_translation(italian_locale)
+            if root.has_translation(italian_locale)
+            else root.copy_for_translation(locale=italian_locale, copy_parents=True)
+        )
+        if site.root_page_id != root.pk:
+            site.root_page = root
+            site.save(update_fields=["root_page"])
 
     localized_roots = {}
     for code in LOCALES:
