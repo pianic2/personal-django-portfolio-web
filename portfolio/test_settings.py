@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 
 import pytest
 
@@ -7,8 +8,20 @@ from portfolio import settings
 
 def test_debug_parser_defaults_to_false_when_unset(monkeypatch):
     monkeypatch.delenv("DJANGO_DEBUG", raising=False)
+    monkeypatch.setenv(
+        "DJANGO_SECRET_KEY",
+        "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    )
+    monkeypatch.setenv("DJANGO_ALLOWED_HOSTS", "localhost")
+    original_exists = Path.exists
+    monkeypatch.setattr(
+        Path,
+        "exists",
+        lambda path: False if path.name == ".env" else original_exists(path),
+    )
 
-    assert settings.env_bool("DJANGO_DEBUG", default=False) is False
+    reloaded = importlib.reload(settings)
+    assert reloaded.DEBUG is False
 
 
 def test_explicit_debug_mode_allows_development_fallback(monkeypatch):
