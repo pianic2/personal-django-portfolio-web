@@ -21,6 +21,13 @@ class LocalizedPageMixin(models.Model):
         max_length=100,
         help_text="Stable editorial identifier shared by all locale translations.",
     )
+    localized_locale = models.ForeignKey(
+        "wagtailcore.Locale",
+        on_delete=models.PROTECT,
+        editable=False,
+        related_name="+",
+        help_text="Database-localized locale key used for stable-id uniqueness.",
+    )
 
     class Meta:
         abstract = True
@@ -40,6 +47,9 @@ class LocalizedPageMixin(models.Model):
 
     def save(self, *args, **kwargs):
         clean = kwargs.pop("clean", True)
+        if not self.locale_id:
+            self.locale_id = self.get_parent().locale_id
+        self.localized_locale_id = self.locale_id
         if clean:
             self.full_clean()
         return super().save(*args, **kwargs)
@@ -52,6 +62,14 @@ class BlogIndexPage(LocalizedPageMixin, Page):
     subpage_types: list[str] = ["portfolio.BlogPostPage"]
     api_fields = _writable_api_fields("stable_id")
     content_panels = Page.content_panels + [FieldPanel("stable_id")]
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["localized_locale", "stable_id"],
+                name="unique_blog_index_locale_stable_id",
+            )
+        ]
 
 
 class BlogPostPage(LocalizedPageMixin, Page):
@@ -80,6 +98,14 @@ class BlogPostPage(LocalizedPageMixin, Page):
         FieldPanel("body"),
         FieldPanel("featured_image"),
     ]
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["localized_locale", "stable_id"],
+                name="unique_blog_post_locale_stable_id",
+            )
+        ]
 
 
 class Capability(models.Model):
@@ -161,6 +187,14 @@ class ProfilePage(LocalizedPageMixin, Page):
         InlinePanel("sections", label="Profile sections"),
         InlinePanel("useful_links", label="Useful links"),
     ]
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["localized_locale", "stable_id"],
+                name="unique_profile_locale_stable_id",
+            )
+        ]
 
 class ProfileSection(Orderable):
     page = ParentalKey(ProfilePage, on_delete=models.CASCADE, related_name="sections")
@@ -283,6 +317,12 @@ class ProjectPage(LocalizedPageMixin, Page):
 
     class Meta:
         ordering = ["display_order", "stable_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["localized_locale", "stable_id"],
+                name="unique_project_locale_stable_id",
+            )
+        ]
 
 
 class ProjectCapability(Orderable):

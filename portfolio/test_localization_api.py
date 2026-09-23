@@ -1,10 +1,14 @@
 import json
+import threading
 from io import BytesIO
 
+from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
-from django.test import TestCase
+from django.core.management.color import no_style
+from django.db import IntegrityError, close_old_connections, connection, transaction
+from django.test import TestCase, TransactionTestCase
 from PIL import Image as PILImage
 from wagtail.images import get_image_model
 from wagtail.models import APIToken, Locale, Site
@@ -306,3 +310,63 @@ class LocalizedPairAPITests(TestCase):
         )
         self.assertEqual(response.status_code, 400, response.content)
         self.assertFalse(BlogPostPage.objects.filter(stable_id="rollback-image").exists())
+
+
+class LocalizedStableIDConcurrencyTests(TransactionTestCase):
+    reset_sequences = True
+
+    def setUp(self):
+        if connection.vendor != "postgresql":
+            self.skipTest("stable-id concurrency regression requires PostgreSQL")
+        with connection.cursor() as cursor:
+            for sql in connection.ops.sequence_reset_sql(no_style(), apps.get_models()):
+                cursor.execute(sql)
+        Locale.objects.get_or_create(id=1, defaults={"language_code": "en"})
+        self.root = Site.objects.get(is_default_site=True).root_page
+        self.locale = Locale.objects.get(pk=1)
+
+    def test_concurrent_same_locale_stable_id_has_one_commit(self):
+        barrier = threading.Barrier(2)
+        outcomes: list[str] = []
+        lock = threading.Lock()
+        pages = [
+            self.root.add_child(
+                instance=BlogIndexPage(
+                    locale=self.locale,
+                    stable_id=f"concurrent-source-{suffix}",
+                    title=f"Concurrent {suffix}",
+                    slug=f"concurrent-source-{suffix}",
+                )
+            )
+            for suffix in ("a", "b")
+        ]
+
+        def update_page(page_id: int) -> None:
+            close_old_connections()
+            try:
+                with transaction.atomic():
+                    barrier.wait(timeout=10)
+                    page = BlogIndexPage.objects.get(pk=page_id)
+                    page.stable_id = "concurrent-stable-id"
+                    page.save(clean=False)
+                result = "committed"
+            except (IntegrityError, threading.BrokenBarrierError):
+                result = "rejected"
+            finally:
+                close_old_connections()
+            with lock:
+                outcomes.append(result)
+
+        threads = [threading.Thread(target=update_page, args=(page.id,)) for page in pages]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=15)
+
+        self.assertEqual(sorted(outcomes), ["committed", "rejected"])
+        self.assertEqual(
+            BlogIndexPage.objects.filter(
+                locale=self.locale, stable_id="concurrent-stable-id"
+            ).count(),
+            1,
+        )
