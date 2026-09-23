@@ -5,7 +5,7 @@ from django.core.management import call_command
 from django.test import TestCase
 from wagtail.models import APIToken, Locale, Site
 
-from .models import BlogIndexPage, BlogPostPage
+from .models import BlogIndexPage, BlogPostPage, ProjectPage
 from .test_support import ensure_localized_site_roots
 
 
@@ -33,7 +33,7 @@ class LocalizedPairAPITests(TestCase):
     def blog_post_parents(self, stable_id="blog"):
         root = Site.objects.get(is_default_site=True).root_page
         parents = {}
-        for code, slug in (("it", "blog-it"), ("en", "blog-en")):
+        for code in ("it", "en"):
             locale = Locale.objects.get(language_code=code)
             parent = BlogIndexPage.objects.filter(locale=locale, stable_id=stable_id).first()
             if parent is None:
@@ -42,7 +42,7 @@ class LocalizedPairAPITests(TestCase):
                         locale=locale,
                         stable_id=stable_id,
                         title=f"Blog {code.upper()}",
-                        slug=slug,
+                        slug=f"{stable_id}-{code}",
                     )
                 )
             parents[code] = parent
@@ -67,6 +67,61 @@ class LocalizedPairAPITests(TestCase):
                 "body": "Body",
             },
         }
+
+    def project_payload(self, stable_id="project-test", parent_ids=None):
+        values = {
+            "title": "Project",
+            "slug": stable_id,
+            "eyebrow": "Eyebrow",
+            "detail_eyebrow": "Detail",
+            "cta_label": "View",
+            "question": "Question",
+            "supporting_text": "Support",
+            "what_i_worked_on": "Work",
+            "future_improvement": "Future",
+            "narrative": {"summary": "Summary"},
+            "metadata": {"label": "Metadata"},
+            "origin": ProjectPage.Origin.ITS_TRAINING,
+            "visual_variant": ProjectPage.VisualVariant.STUDIO_PINK,
+        }
+        return {
+            "type": "portfolio.ProjectPage",
+            "stable_id": stable_id,
+            "it": {
+                **values,
+                "slug": f"{stable_id}-it",
+                "parent_id": (parent_ids or {}).get("it", self.root_id),
+            },
+            "en": {
+                **values,
+                "slug": f"{stable_id}-en",
+                "parent_id": (parent_ids or {}).get("en", self.root_id),
+            },
+        }
+
+    def test_project_rejects_blog_index_parent_atomically(self):
+        parents = self.blog_post_parents("project-parent")
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(self.project_payload("invalid-project", {
+                code: parent.id for code, parent in parents.items()
+            })),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("parent", response.json()["detail"])
+        self.assertFalse(ProjectPage.objects.filter(stable_id="invalid-project").exists())
+
+    def test_project_pair_under_site_roots_remains_valid(self):
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(self.project_payload()),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(ProjectPage.objects.filter(stable_id="project-test").count(), 2)
 
     def test_pair_creation_is_atomic_and_shares_translation_identity(self):
         response = self.client.post(

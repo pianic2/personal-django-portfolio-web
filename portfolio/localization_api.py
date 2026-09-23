@@ -116,6 +116,15 @@ def _create_variant(
     is_site_root = Site.objects.filter(root_page_id=parent.pk).exists()
     if parent.locale_id != locale.id and not is_site_root:
         raise ValidationError({"parent_id": f"Parent must use locale {locale.language_code}."})
+    if not model.can_exist_under(parent):
+        raise ValidationError(
+            {
+                "parent_id": (
+                    f"{model.__name__} cannot be created under "
+                    f"{parent.specific_class.__name__}."
+                )
+            }
+        )
     if not parent.permissions_for_user(user).can_add_subpage():
         raise PermissionDenied("The agent cannot add a page below this parent.")
     if model.objects.filter(locale=locale, stable_id=stable_id).exists():
