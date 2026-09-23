@@ -187,27 +187,8 @@ class PortfolioAgentAPITests(TestCase):
             content_type="application/json",
             **self.authorization,
         )
-        self.assertEqual(new_page.status_code, 201, new_page.content)
-        created = BlogIndexPage.objects.get(slug="agent-draft-index")
-        self.assertFalse(created.live)
-        self.assertEqual(self.client.get(f"/api/v3/pages/{created.pk}/").status_code, 404)
-
-        draft_stable_id_update = self.client.patch(
-            f"/api/v3/pages/{created.pk}/",
-            data=json.dumps(
-                {
-                    "meta": {"type": "portfolio.BlogIndexPage"},
-                    "stable_id": "changed-draft-stable-id",
-                }
-            ),
-            content_type="application/json",
-            **self.authorization,
-        )
-        self.assertEqual(
-            draft_stable_id_update.status_code, 400, draft_stable_id_update.content
-        )
-        created.refresh_from_db()
-        self.assertEqual(created.stable_id, "agent-draft-index")
+        self.assertEqual(new_page.status_code, 403, new_page.content)
+        self.assertFalse(BlogIndexPage.objects.filter(slug="agent-draft-index").exists())
 
         publish = self.client.post(
             f"/api/v3/pages/{profile.pk}/actions/publish/",
@@ -216,6 +197,16 @@ class PortfolioAgentAPITests(TestCase):
         self.assertEqual(publish.status_code, 403)
         profile.refresh_from_db()
         self.assertEqual(profile.hero_description, public_description)
+
+    def test_bearer_token_cannot_delete_one_locale_of_a_pair(self):
+        profile = ProfilePage.objects.get(
+            locale=Locale.objects.get(language_code="en"), stable_id="profile"
+        )
+        deletion = self.client.delete(
+            f"/api/v3/pages/{profile.pk}/", **self.authorization
+        )
+        self.assertEqual(deletion.status_code, 403, deletion.content)
+        self.assertTrue(ProfilePage.objects.filter(pk=profile.pk).exists())
 
     def test_bearer_token_can_create_and_update_media_only_in_agent_collection(self):
         response = self.client.post(
