@@ -12,8 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DJANGO_DATABASE_URL: postgresql://portfolio:portfolio@localhost:5432/portfolio
-      DJANGO_SECRET_KEY: ci-only-test-secret-not-for-production-0123456789abcdef
-      DJANGO_ALLOWED_HOSTS: localhost
+      DJANGO_DEBUG: "true"
     services:
       postgres:
         image: postgres:18.4
