@@ -13,7 +13,7 @@ from PIL import Image as PILImage
 from wagtail.images import get_image_model
 from wagtail.models import APIToken, Locale, Site
 
-from .models import BlogIndexPage, BlogPostPage, ProjectPage
+from .models import BlogIndexPage, BlogPostPage, ProfilePage, ProjectPage
 from .test_support import ensure_localized_site_roots
 
 
@@ -142,6 +142,58 @@ class LocalizedPairAPITests(TestCase):
         )
         self.assertEqual(response.status_code, 201, response.content)
         self.assertEqual(ProjectPage.objects.filter(stable_id="project-test").count(), 2)
+
+    def test_profile_singleton_rejects_noncanonical_and_second_pairs_atomically(self):
+        profile_count = ProfilePage.objects.count()
+        noncanonical = {
+            "type": "portfolio.ProfilePage",
+            "stable_id": "second-profile",
+            "it": {"parent_id": self.root_id, "title": "Profilo IT", "slug": "second-profile-it"},
+            "en": {"parent_id": self.root_id, "title": "Profile EN", "slug": "second-profile-en"},
+        }
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(noncanonical),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("canonical", response.json()["detail"])
+        self.assertEqual(ProfilePage.objects.count(), profile_count)
+
+        second = {
+            **noncanonical,
+            "stable_id": "profile",
+            "it": {
+                "parent_id": self.root_id,
+                "title": "Profilo IT",
+                "slug": "second-profile-it",
+                "hero_eyebrow": "Ciao",
+                "hero_description": "Descrizione",
+                "highlights_label": "Punti",
+                "closing_title": "Fine",
+                "closing_description": "Descrizione finale",
+            },
+            "en": {
+                "parent_id": self.root_id,
+                "title": "Profile EN",
+                "slug": "second-profile-en",
+                "hero_eyebrow": "Hello",
+                "hero_description": "Description",
+                "highlights_label": "Highlights",
+                "closing_title": "Closing",
+                "closing_description": "Closing description",
+            },
+        }
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(second),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("singleton", response.json()["detail"])
+        self.assertEqual(ProfilePage.objects.count(), profile_count)
 
     def test_pair_creation_is_atomic_and_shares_translation_identity(self):
         response = self.client.post(

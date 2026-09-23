@@ -201,6 +201,15 @@ def create_localized_pair(
     try:
         locales = {code: Locale.objects.get(language_code=code) for code in LOCALES}
         with transaction.atomic():
+            if model is ProfilePage:
+                if data.stable_id != "profile":
+                    raise ValidationError(
+                        {"stable_id": "ProfilePage must use the canonical 'profile' stable ID."}
+                    )
+                if ProfilePage.objects.exists():
+                    raise ValidationError(
+                        {"type": "The canonical ProfilePage singleton already exists."}
+                    )
             first = _create_variant(
                 model=model,
                 locale=locales["it"],
