@@ -168,6 +168,7 @@ class PublicAPIContractTests(TestCase):
         translation = first.copy_for_translation(
             locale=Locale.objects.get(language_code="en"), copy_parents=True
         )
+        translation.get_parent().save_revision().publish()
         translation.title = "First post EN"
         translation.slug = "first-post-en"
         translation.save_revision().publish()
