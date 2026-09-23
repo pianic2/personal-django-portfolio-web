@@ -237,3 +237,32 @@ class PublicAPIContractTests(TestCase):
         )
         self.assertEqual(by_list.status_code, 200)
         self.assertEqual(by_list.json()["count"], 0)
+
+    def test_anonymous_api_excludes_live_descendant_of_draft_ancestor(self):
+        draft_index = BlogIndexPage(
+            title="Draft index",
+            slug="draft-index",
+            stable_id="draft-index",
+            locale=Locale.objects.get(language_code="it"),
+        )
+        self.root.add_child(instance=draft_index)
+        BlogIndexPage.objects.filter(pk=draft_index.pk).update(live=False)
+        child = BlogPostPage(
+            title="Hidden child",
+            slug="hidden-child",
+            stable_id="hidden-child",
+            excerpt="Excerpt",
+            body="Body",
+            locale=draft_index.locale,
+        )
+        draft_index.add_child(instance=child)
+        child.save_revision().publish()
+
+        by_id = self.client.get(f"/api/v3/pages/{child.id}/")
+        self.assertEqual(by_id.status_code, 404)
+        by_list = self.client.get(
+            "/api/v3/pages/",
+            {"type": "portfolio.BlogPostPage", "locale": "it", "slug": child.slug},
+        )
+        self.assertEqual(by_list.status_code, 200)
+        self.assertEqual(by_list.json()["count"], 0)
