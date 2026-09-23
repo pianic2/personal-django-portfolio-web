@@ -121,6 +121,21 @@ class PortfolioAgentAPITests(TestCase):
         )
         public_description = profile.hero_description
 
+        stable_id_update = self.client.patch(
+            f"/api/v3/pages/{profile.pk}/",
+            data=json.dumps(
+                {
+                    "meta": {"type": "portfolio.ProfilePage"},
+                    "stable_id": "changed-live-stable-id",
+                }
+            ),
+            content_type="application/json",
+            **self.authorization,
+        )
+        self.assertEqual(stable_id_update.status_code, 400, stable_id_update.content)
+        profile.refresh_from_db()
+        self.assertEqual(profile.stable_id, "profile")
+
         readable_draft = self.client.get(
             f"/api/v3/pages/{profile.pk}/?version=draft", **self.authorization
         )
@@ -176,6 +191,23 @@ class PortfolioAgentAPITests(TestCase):
         created = BlogIndexPage.objects.get(slug="agent-draft-index")
         self.assertFalse(created.live)
         self.assertEqual(self.client.get(f"/api/v3/pages/{created.pk}/").status_code, 404)
+
+        draft_stable_id_update = self.client.patch(
+            f"/api/v3/pages/{created.pk}/",
+            data=json.dumps(
+                {
+                    "meta": {"type": "portfolio.BlogIndexPage"},
+                    "stable_id": "changed-draft-stable-id",
+                }
+            ),
+            content_type="application/json",
+            **self.authorization,
+        )
+        self.assertEqual(
+            draft_stable_id_update.status_code, 400, draft_stable_id_update.content
+        )
+        created.refresh_from_db()
+        self.assertEqual(created.stable_id, "agent-draft-index")
 
         publish = self.client.post(
             f"/api/v3/pages/{profile.pk}/actions/publish/",
