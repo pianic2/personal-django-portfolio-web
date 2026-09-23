@@ -50,6 +50,12 @@ PAGE_TYPES = {
     "portfolio.ProjectPage": ProjectPage,
 }
 LOCALES = ("it", "en")
+STABLE_ID_CONSTRAINTS = {
+    "unique_blog_index_locale_stable_id",
+    "unique_blog_post_locale_stable_id",
+    "unique_profile_locale_stable_id",
+    "unique_project_locale_stable_id",
+}
 PROTECTED_FIELDS = {
     "id",
     "path",
@@ -61,6 +67,21 @@ PROTECTED_FIELDS = {
     "live",
     "stable_id",
 }
+
+
+def _is_stable_id_integrity_error(exc: IntegrityError) -> bool:
+    """Recognize only the stable-ID uniqueness failures we can explain safely."""
+    cause = exc.__cause__
+    constraint_name = getattr(getattr(cause, "diag", None), "constraint_name", None)
+    if constraint_name in STABLE_ID_CONSTRAINTS:
+        return True
+
+    message = " ".join(str(arg) for arg in exc.args).lower()
+    return any(name in message for name in STABLE_ID_CONSTRAINTS) or (
+        "unique" in message
+        and "localized_locale" in message
+        and "stable_id" in message
+    )
 
 
 def _page_fields(model: type[Page]) -> set[str]:
@@ -238,8 +259,12 @@ def create_localized_pair(
             )
         elif isinstance(exc, Page.DoesNotExist):
             details = "parent_id: Parent page does not exist."
+        elif isinstance(exc, IntegrityError) and _is_stable_id_integrity_error(exc):
+            details = (
+                "stable_id: A page already uses this stable ID for one of the requested locales."
+            )
         else:
-            details = str(exc)
+            details = "An unexpected database integrity error occurred."
         raise HttpError(
             400,
             f"Localized pair creation failed; no pages were created. {details}",

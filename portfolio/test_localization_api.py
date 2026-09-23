@@ -1,6 +1,7 @@
 import json
 import threading
 from io import BytesIO
+from unittest.mock import patch
 
 from django.apps import apps
 from django.contrib.auth import get_user_model
@@ -249,6 +250,39 @@ class LocalizedPairAPITests(TestCase):
         )
         self.assertEqual(duplicate.status_code, 400, duplicate.content)
         self.assertEqual(BlogIndexPage.objects.filter(stable_id="duplicate-test").count(), 2)
+
+    @patch(
+        "portfolio.localization_api._create_variant",
+        side_effect=IntegrityError(
+            "UNIQUE constraint failed: portfolio_blogindexpage.localized_locale_id, "
+            "portfolio_blogindexpage.stable_id"
+        ),
+    )
+    def test_stable_id_integrity_error_has_bounded_client_message(self, _create_variant):
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(self.payload("integrity-stable-id")),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("stable_id", response.json()["detail"])
+        self.assertNotIn("portfolio_blogindexpage", response.json()["detail"])
+
+    @patch(
+        "portfolio.localization_api._create_variant",
+        side_effect=IntegrityError("secret table and backend details"),
+    )
+    def test_unrelated_integrity_error_does_not_leak_database_details(self, _create_variant):
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(self.payload("integrity-unrelated")),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("unexpected database integrity error", response.json()["detail"])
+        self.assertNotIn("secret table", response.json()["detail"])
 
     def test_blog_post_resolves_localized_parent_by_stable_identity(self):
         response = self.client.post(
