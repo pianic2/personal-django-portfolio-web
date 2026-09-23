@@ -137,6 +137,26 @@ def database_config() -> dict[str, object]:
 
 DATABASES = {"default": database_config()}
 
+# Trust only the configured number of proxy hops when DRF resolves a client
+# address from X-Forwarded-For. Local development remains direct by default.
+try:
+    NUM_PROXIES = int(os.environ.get("DJANGO_NUM_PROXIES", "0" if DEBUG else "1"))
+except ValueError as exc:
+    raise RuntimeError("DJANGO_NUM_PROXIES must be a non-negative integer.") from exc
+if NUM_PROXIES < 0:
+    raise RuntimeError("DJANGO_NUM_PROXIES must be a non-negative integer.")
+
+CACHES = {
+    "default": {
+        "BACKEND": (
+            "django.core.cache.backends.locmem.LocMemCache"
+            if DEBUG
+            else "django.core.cache.backends.db.DatabaseCache"
+        ),
+        "LOCATION": "portfolio-local" if DEBUG else "django_cache_table",
+    }
+}
+
 INSTALLED_APPS = [
     "portfolio",
     "rest_framework",

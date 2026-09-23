@@ -32,6 +32,10 @@ def test_explicit_debug_mode_allows_development_fallback(monkeypatch):
     assert reloaded.DEBUG is True
     assert reloaded.SECRET_KEY == reloaded.DEVELOPMENT_SECRET_KEY
     assert reloaded.STORAGES["default"]["BACKEND"] == "django.core.files.storage.FileSystemStorage"
+    assert reloaded.NUM_PROXIES == 0
+    assert reloaded.CACHES["default"]["BACKEND"] == (
+        "django.core.cache.backends.locmem.LocMemCache"
+    )
 
 
 @pytest.mark.parametrize(
@@ -67,3 +71,21 @@ def test_settings_default_is_fail_closed(monkeypatch):
     assert reloaded.STORAGES["staticfiles"]["BACKEND"] == (
         "whitenoise.storage.CompressedManifestStaticFilesStorage"
     )
+
+
+def test_production_uses_bounded_proxy_trust_and_shared_cache(monkeypatch):
+    monkeypatch.setenv("DJANGO_DEBUG", "false")
+    monkeypatch.setenv(
+        "DJANGO_SECRET_KEY",
+        "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    )
+    monkeypatch.setenv("DJANGO_ALLOWED_HOSTS", "localhost")
+    monkeypatch.delenv("DJANGO_NUM_PROXIES", raising=False)
+
+    reloaded = importlib.reload(settings)
+
+    assert reloaded.NUM_PROXIES == 1
+    assert reloaded.CACHES["default"] == {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_cache_table",
+    }

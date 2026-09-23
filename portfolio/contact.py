@@ -24,7 +24,7 @@ class ContactRateThrottle(SimpleRateThrottle):
     scope = "contact"
 
     def get_cache_key(self, request, view):
-        address = request.META.get("REMOTE_ADDR", "unknown")
+        address = self.get_ident(request) or "unknown"
         return f"contact-rate:{hashlib.sha256(address.encode()).hexdigest()}"
 
 
@@ -35,7 +35,7 @@ class DuplicateContactThrottle(SimpleRateThrottle):
 
     def get_cache_key(self, request, view):
         values = getattr(request, "_contact_values", request.data)
-        address = request.META.get("REMOTE_ADDR", "unknown")
+        address = self.get_ident(request) or "unknown"
         fingerprint = "\x00".join(
             [
                 address,

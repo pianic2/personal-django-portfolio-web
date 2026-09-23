@@ -26,6 +26,7 @@ Do not commit secrets. The supported variables are:
 | `DJANGO_SECRET_KEY` | Required unless explicit debug mode is enabled; must be strong in production. A development-only fallback exists only with `DJANGO_DEBUG=true`. |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hosts; required when debug is false. |
 | `DJANGO_DATABASE_URL` | Required PostgreSQL URL, for example `postgresql://portfolio:portfolio@localhost:5432/portfolio`; SQLite is not supported. |
+| `DJANGO_NUM_PROXIES` | Number of trusted proxy hops used by DRF throttling; defaults to `0` locally and `1` in production. |
 | `DJANGO_CORS_ALLOWED_ORIGINS` | Comma-separated origins; defaults to local React and the GitHub Pages consumer. |
 | `DJANGO_BASE_URL` | Wagtail admin base URL; defaults to `http://localhost:8000`. |
 | `DJANGO_EMAIL_BACKEND`, `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_HOST_USER`, `DJANGO_EMAIL_HOST_PASSWORD`, `DJANGO_EMAIL_USE_TLS`, `DJANGO_DEFAULT_FROM_EMAIL` | Email transport settings. Console email is the local default. |
@@ -47,6 +48,10 @@ and `pgbouncer`. Remote hosts default to `sslmode=require` and reject weaker
 TLS modes; local hosts retain `sslmode=prefer` unless explicitly configured.
 `pgbouncer=true` enables Django's `DISABLE_SERVER_SIDE_CURSORS` compatibility
 setting. Unsupported options fail during settings initialization.
+
+Production uses Django's PostgreSQL-backed cache (`django_cache_table`) so
+contact throttles are shared by web workers. Create the cache table once after
+database migrations with `uv run python manage.py createcachetable`.
 
 Production media URLs require a public bucket or public media hostname when
 `AWS_QUERYSTRING_AUTH=false`; use signed URLs for private buckets. Configure the

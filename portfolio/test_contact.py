@@ -86,6 +86,26 @@ class ContactEndpointTests(TestCase):
         self.assertEqual(response.json()["code"], "throttled")
         self.assertEqual(send_mail.call_count, 3)
 
+    @override_settings(NUM_PROXIES=1)
+    @patch("portfolio.contact.send_mail", return_value=1)
+    def test_proxy_clients_have_independent_rate_buckets(self, send_mail):
+        for client_ip in ("203.0.113.10", "203.0.113.11"):
+            for index in range(3):
+                payload = {
+                    **VALID_PAYLOAD,
+                    "message": f"Proxy client {client_ip} message {index:02d}.",
+                }
+                response = self.client.post(
+                    CONTACT_URL,
+                    payload,
+                    format="json",
+                    REMOTE_ADDR="10.0.0.5",
+                    HTTP_X_FORWARDED_FOR=f"{client_ip}, 10.0.0.5",
+                )
+                self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(send_mail.call_count, 6)
+
     @patch("portfolio.contact.send_mail", return_value=1)
     def test_configured_cors_origin_is_allowed(self, send_mail):
         response = self.client.options(
