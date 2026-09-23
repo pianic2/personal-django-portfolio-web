@@ -100,7 +100,7 @@ class ContactEndpointTests(TestCase):
                     payload,
                     format="json",
                     REMOTE_ADDR="10.0.0.5",
-                    HTTP_X_FORWARDED_FOR=f"{client_ip}, 10.0.0.5",
+                    HTTP_X_FORWARDED_FOR=f"10.0.0.5, {client_ip}",
                 )
                 self.assertEqual(response.status_code, 200)
 

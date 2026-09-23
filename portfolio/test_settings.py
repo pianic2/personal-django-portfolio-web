@@ -89,3 +89,18 @@ def test_production_uses_bounded_proxy_trust_and_shared_cache(monkeypatch):
         "BACKEND": "django.core.cache.backends.db.DatabaseCache",
         "LOCATION": "django_cache_table",
     }
+
+
+@pytest.mark.django_db
+def test_database_cache_instances_share_values():
+    from django.core.cache.backends.db import DatabaseCache
+    from django.core.management import call_command
+
+    call_command("createcachetable", "django_cache_table", verbosity=0)
+    params = {"TIMEOUT": 60}
+    first_worker = DatabaseCache("django_cache_table", params)
+    second_worker = DatabaseCache("django_cache_table", params)
+
+    first_worker.set("pdpw53-cache-boundary", "shared")
+
+    assert second_worker.get("pdpw53-cache-boundary") == "shared"
