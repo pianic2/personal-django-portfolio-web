@@ -31,6 +31,7 @@ def test_explicit_debug_mode_allows_development_fallback(monkeypatch):
     reloaded = importlib.reload(settings)
     assert reloaded.DEBUG is True
     assert reloaded.SECRET_KEY == reloaded.DEVELOPMENT_SECRET_KEY
+    assert reloaded.STORAGES["default"]["BACKEND"] == "django.core.files.storage.FileSystemStorage"
 
 
 @pytest.mark.parametrize(
@@ -62,3 +63,7 @@ def test_settings_default_is_fail_closed(monkeypatch):
 
     reloaded = importlib.reload(settings)
     assert reloaded.DEBUG is False
+    assert reloaded.STORAGES["default"]["BACKEND"] == "storages.backends.s3.S3Storage"
+    assert reloaded.STORAGES["staticfiles"]["BACKEND"] == (
+        "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    )

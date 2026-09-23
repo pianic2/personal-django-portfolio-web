@@ -34,6 +34,16 @@ Do not commit secrets. The supported variables are:
 | `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SECURE_HSTS_SECONDS` | Production HTTPS behavior. |
 | `WAGTAIL_AGENT_API_URL` | Base URL used by the MCP server. |
 | `WAGTAIL_AGENT_API_TOKEN` | Server-side bearer token used by the MCP server; never expose or commit it. |
+| `AWS_STORAGE_BUCKET_NAME` | Production S3-compatible media bucket; leave unset for local development. |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Production object-storage credentials (or use the runtime's IAM credentials). |
+| `AWS_S3_REGION_NAME` | Optional S3 region. |
+| `AWS_S3_ENDPOINT_URL` | Optional S3-compatible endpoint URL. |
+| `AWS_S3_CUSTOM_DOMAIN` | Optional public media hostname used when generating URLs. |
+| `AWS_QUERYSTRING_AUTH` | Set `true` when media URLs must be signed; defaults to `false`. |
+
+Production media URLs require a public bucket or public media hostname when
+`AWS_QUERYSTRING_AUTH=false`; use signed URLs for private buckets. Configure the
+bucket and credentials in the deployment environment, never in this repository.
 
 PostgreSQL is the only supported database backend. The repository-owned
 Compose service uses PostgreSQL 18.4, matching CI. The database URL parser

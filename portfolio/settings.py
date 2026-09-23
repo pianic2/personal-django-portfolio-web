@@ -152,14 +152,29 @@ TEMPLATES = [
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": {
+        "BACKEND": (
+            "storages.backends.s3.S3Storage"
+            if not DEBUG
+            else "django.core.files.storage.FileSystemStorage"
+        ),
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+if not DEBUG:
+    STORAGES["default"]["OPTIONS"] = {
+        "bucket_name": os.environ.get("AWS_STORAGE_BUCKET_NAME", ""),
+        "region_name": os.environ.get("AWS_S3_REGION_NAME") or None,
+        "endpoint_url": os.environ.get("AWS_S3_ENDPOINT_URL", "") or None,
+        "custom_domain": os.environ.get("AWS_S3_CUSTOM_DOMAIN", "") or None,
+        "querystring_auth": env_bool("AWS_QUERYSTRING_AUTH", default=False),
+        "default_acl": None,
+    }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 CORS_ALLOWED_ORIGINS = [
