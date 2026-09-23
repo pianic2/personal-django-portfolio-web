@@ -35,13 +35,16 @@ def env_bool(name: str, *, default: bool) -> bool:
     raise RuntimeError(f"{name} must be a boolean value.")
 
 
-DEBUG = env_bool("DJANGO_DEBUG", default=True)
+DEBUG = env_bool("DJANGO_DEBUG", default=False)
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
+DEVELOPMENT_SECRET_KEY = "development-only-key-do-not-use-in-production"
 if not SECRET_KEY:
     if DEBUG:
-        SECRET_KEY = "development-only-key-do-not-use-in-production"
+        SECRET_KEY = DEVELOPMENT_SECRET_KEY
     else:
         raise RuntimeError("DJANGO_SECRET_KEY is required when DJANGO_DEBUG is false.")
+if not DEBUG and SECRET_KEY == DEVELOPMENT_SECRET_KEY:
+    raise RuntimeError("DJANGO_SECRET_KEY must not use the development secret in production.")
 if not DEBUG and (len(SECRET_KEY) < 50 or len(set(SECRET_KEY)) < 5):
     raise RuntimeError("DJANGO_SECRET_KEY must be a strong production secret.")
 

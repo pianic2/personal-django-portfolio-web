@@ -22,8 +22,8 @@ Do not commit secrets. The supported variables are:
 
 | Variable | Behavior |
 | --- | --- |
-| `DJANGO_DEBUG` | Boolean; defaults to `true`. |
-| `DJANGO_SECRET_KEY` | Required in production; must be strong. A development-only fallback exists only with debug enabled. |
+| `DJANGO_DEBUG` | Boolean; defaults to `false`. Set explicitly to `true` for local development. |
+| `DJANGO_SECRET_KEY` | Required unless explicit debug mode is enabled; must be strong in production. A development-only fallback exists only with `DJANGO_DEBUG=true`. |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hosts; required when debug is false. |
 | `DJANGO_DATABASE_URL` | Required PostgreSQL URL, for example `postgresql://portfolio:portfolio@localhost:5432/portfolio`; SQLite is not supported. |
 | `DJANGO_CORS_ALLOWED_ORIGINS` | Comma-separated origins; defaults to local React and the GitHub Pages consumer. |
