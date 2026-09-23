@@ -35,8 +35,10 @@ Supported types are `BlogIndexPage`, `BlogPostPage`, `ProfilePage`, and
 `parent_id`; protected fields such as `live`, `locale`, and `translation_key`
 cannot be supplied. The caller needs Wagtail page-add permission below both
 parents. Success returns `201` with the stable ID, shared translation key, and
-the two created page IDs. Invalid locale, parent, duplicate, field, or
-permission input returns `400`; the transaction rolls back both pages.
+the two created page IDs. Invalid request shape, locale, parent, duplicate, or
+field input returns `400`; the transaction rolls back both pages. Missing
+authentication returns `401`, and an authenticated caller without page-add
+permission below either parent receives `403`.
 
 ## Contact endpoint
 
@@ -54,8 +56,9 @@ include `Retry-After`.
 
 `uv run python -m portfolio.mcp_server` fetches the Wagtail OpenAPI document
 from `WAGTAIL_AGENT_API_URL` and uses `WAGTAIL_AGENT_API_TOKEN` server-side.
-The exposed tools cover page list/create/find/detail/update, localized-pair
-creation, page revisions, content-type schemas, and image/document
-list/create/detail/update. Unmatched Wagtail routes are excluded. Publish and
-unpublish actions are rejected in query parameters and recursively in request
-bodies. Image/document base64 data URLs are converted to multipart uploads.
+The exposed tools cover page list/find/detail/draft-update, localized-pair
+creation as the only page-creation path, page revisions, content-type schemas,
+and image/document list/create/detail/update. Generic page creation is not
+exposed. Unmatched Wagtail routes are excluded. Publish and unpublish actions
+are rejected in query parameters and recursively in request bodies.
+Image/document base64 data URLs are converted to multipart uploads.
