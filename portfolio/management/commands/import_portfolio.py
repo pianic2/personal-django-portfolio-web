@@ -235,6 +235,7 @@ def _ensure_localized_site_roots(site, locales):
         if site.root_page_id != root.pk:
             site.root_page = root
             site.save(update_fields=["root_page"])
+            Site.clear_site_root_paths_cache()
 
     localized_roots = {}
     for code in LOCALES:

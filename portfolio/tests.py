@@ -550,20 +550,20 @@ class PortfolioImportTests(TestCase):
         )
         validate_portfolio_integrity()
 
+    @override_settings(ROOT_URLCONF="wagtail.urls")
     def test_import_assigns_locale_correct_urls_without_duplicate_sites(self):
         site = Site.objects.get(is_default_site=True)
         english = Locale.objects.get(language_code="en")
         site.root_page = site.root_page.get_translation(english)
         site.save(update_fields=["root_page"])
-        site_count = Site.objects.count()
-
         call_command("import_portfolio", stdout=None)
+        site_count = Site.objects.count()
         call_command("import_portfolio", stdout=None)
 
         profiles = ProfilePage.objects.filter(stable_id="profile").select_related("locale")
         urls = {profile.locale.language_code: profile.get_url() for profile in profiles}
         self.assertEqual(set(urls), {"it", "en"})
-        self.assertEqual(set(urls.values()), {"/profilo/", "/profile/"})
+        self.assertEqual(set(urls.values()), {"/profilo/", "/profile/"}, urls)
         self.assertEqual(Site.objects.count(), site_count)
         self.assertEqual(
             Site.objects.get(is_default_site=True).root_page.locale,
