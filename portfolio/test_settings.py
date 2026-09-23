@@ -73,6 +73,32 @@ def test_settings_default_is_fail_closed(monkeypatch):
     )
 
 
+def test_email_timeout_defaults_and_wires_to_smtp_backend(monkeypatch):
+    from django.core.mail.backends.smtp import EmailBackend
+
+    monkeypatch.delenv("DJANGO_EMAIL_TIMEOUT", raising=False)
+    reloaded = importlib.reload(settings)
+
+    assert reloaded.EMAIL_TIMEOUT == 10
+    assert EmailBackend().timeout == reloaded.EMAIL_TIMEOUT
+
+
+def test_email_timeout_is_configurable(monkeypatch):
+    monkeypatch.setenv("DJANGO_EMAIL_TIMEOUT", "23")
+
+    reloaded = importlib.reload(settings)
+
+    assert reloaded.EMAIL_TIMEOUT == 23
+
+
+@pytest.mark.parametrize("timeout", ["invalid", "0", "-1"])
+def test_email_timeout_rejects_invalid_or_nonpositive_values(monkeypatch, timeout):
+    monkeypatch.setenv("DJANGO_EMAIL_TIMEOUT", timeout)
+
+    with pytest.raises(RuntimeError, match="DJANGO_EMAIL_TIMEOUT must be a positive integer"):
+        importlib.reload(settings)
+
+
 def test_production_uses_bounded_proxy_trust_and_shared_cache(monkeypatch):
     monkeypatch.setenv("DJANGO_DEBUG", "false")
     monkeypatch.setenv(

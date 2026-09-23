@@ -291,6 +291,14 @@ EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "25"))
 EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("DJANGO_EMAIL_USE_TLS", default=False)
+try:
+    EMAIL_TIMEOUT = int(os.environ.get("DJANGO_EMAIL_TIMEOUT", "10"))
+except ValueError:
+    raise RuntimeError(
+        "DJANGO_EMAIL_TIMEOUT must be a positive integer number of seconds"
+    ) from None
+if EMAIL_TIMEOUT <= 0:
+    raise RuntimeError("DJANGO_EMAIL_TIMEOUT must be a positive integer number of seconds")
 DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_DEFAULT_FROM_EMAIL", "webmaster@localhost")
 CONTACT_RECIPIENT_EMAIL = os.environ.get("DJANGO_CONTACT_RECIPIENT_EMAIL", "")
 CONTACT_FROM_EMAIL = os.environ.get("DJANGO_CONTACT_FROM_EMAIL") or DEFAULT_FROM_EMAIL

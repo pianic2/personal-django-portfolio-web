@@ -29,7 +29,7 @@ Do not commit secrets. The supported variables are:
 | `DJANGO_NUM_PROXIES` | Number of trusted proxy hops used by DRF throttling; defaults to `0` locally and `1` in production. |
 | `DJANGO_CORS_ALLOWED_ORIGINS` | Comma-separated origins; defaults to local React and the GitHub Pages consumer. |
 | `DJANGO_BASE_URL` | Wagtail admin base URL; defaults to `http://localhost:8000`. |
-| `DJANGO_EMAIL_BACKEND`, `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_HOST_USER`, `DJANGO_EMAIL_HOST_PASSWORD`, `DJANGO_EMAIL_USE_TLS`, `DJANGO_DEFAULT_FROM_EMAIL` | Email transport settings. Console email is the local default. |
+| `DJANGO_EMAIL_BACKEND`, `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_HOST_USER`, `DJANGO_EMAIL_HOST_PASSWORD`, `DJANGO_EMAIL_USE_TLS`, `DJANGO_EMAIL_TIMEOUT`, `DJANGO_DEFAULT_FROM_EMAIL` | Email transport settings. SMTP has a 10-second timeout by default; `DJANGO_EMAIL_TIMEOUT` must be a positive integer number of seconds. Console email is the local default. |
 | `DJANGO_CONTACT_RECIPIENT_EMAIL` | Recipient required for successful contact delivery. |
 | `DJANGO_CONTACT_FROM_EMAIL` | Optional contact sender; otherwise the default sender is used. |
 | `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SECURE_HSTS_SECONDS` | Production HTTPS behavior. |
