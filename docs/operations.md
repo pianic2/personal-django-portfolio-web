@@ -49,6 +49,13 @@ neither the root content route nor media files in production; use the Wagtail
 and deployment infrastructure for those responsibilities.
 
 The repository contains WSGI and ASGI entry points in `portfolio/wsgi.py` and
-`portfolio/asgi.py`. No deployment platform-specific command is implemented in
-the repository, so deployment details beyond these runtime contracts are not
-claimed here.
+`portfolio/asgi.py`. The supported production web process is Gunicorn via the
+repository Procfile:
+
+```bash
+gunicorn portfolio.wsgi:application
+```
+
+Run `uv run python manage.py collectstatic --noinput` during the image/build
+step. WhiteNoise serves the resulting manifest-backed files at `/static/` when
+`DEBUG=false`; media remains an external deployment concern.
