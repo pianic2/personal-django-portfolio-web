@@ -41,6 +41,13 @@ Do not commit secrets. The supported variables are:
 | `AWS_S3_CUSTOM_DOMAIN` | Optional public media hostname used when generating URLs. |
 | `AWS_QUERYSTRING_AUTH` | Set `true` when media URLs must be signed; defaults to `false`. |
 
+PostgreSQL URL query options are explicitly limited to `sslmode`,
+`channel_binding`, `connect_timeout`, `application_name`, `target_session_attrs`,
+and `pgbouncer`. Remote hosts default to `sslmode=require` and reject weaker
+TLS modes; local hosts retain `sslmode=prefer` unless explicitly configured.
+`pgbouncer=true` enables Django's `DISABLE_SERVER_SIDE_CURSORS` compatibility
+setting. Unsupported options fail during settings initialization.
+
 Production media URLs require a public bucket or public media hostname when
 `AWS_QUERYSTRING_AUTH=false`; use signed URLs for private buckets. Configure the
 bucket and credentials in the deployment environment, never in this repository.

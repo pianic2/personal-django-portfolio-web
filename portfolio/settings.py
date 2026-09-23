@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -73,14 +73,66 @@ def database_config() -> dict[str, object]:
         port = parsed.port or 5432
     except ValueError as exc:
         raise RuntimeError("DJANGO_DATABASE_URL must contain a valid PostgreSQL port.") from exc
-    return {
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    supported_options = {
+        "sslmode": {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"},
+        "channel_binding": {"disable", "prefer", "require"},
+        "connect_timeout": None,
+        "application_name": None,
+        "target_session_attrs": {"any", "read-write", "read-only", "primary", "standby"},
+        "pgbouncer": {"true", "false", "1", "0", "yes", "no", "on", "off"},
+    }
+    unsupported = sorted(set(query) - set(supported_options))
+    if unsupported:
+        raise RuntimeError(
+            "DJANGO_DATABASE_URL contains unsupported PostgreSQL option(s): "
+            + ", ".join(unsupported)
+        )
+
+    options: dict[str, str | int] = {}
+    for name, values in query.items():
+        if len(values) != 1 or not values[0]:
+            raise RuntimeError(f"DJANGO_DATABASE_URL option {name} must have one non-empty value.")
+        value = values[0]
+        allowed = supported_options[name]
+        if allowed is not None and value.lower() not in allowed:
+            raise RuntimeError(f"DJANGO_DATABASE_URL option {name} has an invalid value.")
+        if name == "connect_timeout":
+            try:
+                value = int(value)
+            except ValueError as exc:
+                raise RuntimeError(
+                    "DJANGO_DATABASE_URL option connect_timeout must be an integer."
+                ) from exc
+            if value < 0:
+                raise RuntimeError(
+                    "DJANGO_DATABASE_URL option connect_timeout must be non-negative."
+                )
+        elif name == "application_name":
+            value = unquote(value)
+        options[name] = value
+
+    local_host = parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+    sslmode = str(options.get("sslmode", "prefer" if local_host else "require"))
+    if not local_host and sslmode in {"disable", "allow", "prefer"}:
+        raise RuntimeError(
+            "DJANGO_DATABASE_URL must use sslmode=require or stronger for production hosts."
+        )
+    options["sslmode"] = sslmode
+    pgbouncer = str(options.pop("pgbouncer", "false")).lower() in {"true", "1", "yes", "on"}
+
+    config = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": db_name,
         "USER": unquote(parsed.username or ""),
         "PASSWORD": unquote(parsed.password or ""),
         "HOST": parsed.hostname,
         "PORT": port,
+        "OPTIONS": options,
     }
+    if pgbouncer:
+        config["DISABLE_SERVER_SIDE_CURSORS"] = True
+    return config
 
 
 DATABASES = {"default": database_config()}
