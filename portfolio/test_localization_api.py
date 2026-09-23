@@ -1,8 +1,12 @@
 import json
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import TestCase
+from PIL import Image as PILImage
+from wagtail.images import get_image_model
 from wagtail.models import APIToken, Locale, Site
 
 from .models import BlogIndexPage, BlogPostPage, ProjectPage
@@ -98,6 +102,18 @@ class LocalizedPairAPITests(TestCase):
                 "parent_id": (parent_ids or {}).get("en", self.root_id),
             },
         }
+
+    def featured_image(self):
+        image_data = BytesIO()
+        PILImage.new("RGB", (2, 2), color="white").save(image_data, format="PNG")
+        image = get_image_model().objects.create(
+            title="Localized pair image",
+            file=SimpleUploadedFile(
+                "localized-pair.png", image_data.getvalue(), content_type="image/png"
+            ),
+        )
+        self.addCleanup(lambda: image.file.delete(save=False))
+        return image
 
     def test_project_rejects_blog_index_parent_atomically(self):
         parents = self.blog_post_parents("project-parent")
@@ -221,3 +237,72 @@ class LocalizedPairAPITests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("Unsupported fields", response.json()["detail"])
+
+    def test_blog_post_resolves_featured_image_id(self):
+        image = self.featured_image()
+        payload = self.blog_post_payload("featured-image")
+        payload["it"]["featured_image"] = image.id
+        payload["en"]["featured_image"] = image.id
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(
+            set(BlogPostPage.objects.filter(stable_id="featured-image").values_list(
+                "featured_image_id", flat=True
+            )),
+            {image.id},
+        )
+
+    def test_featured_image_validation_is_atomic_and_rejects_unsupported_use(self):
+        missing = self.blog_post_payload("missing-image")
+        missing["it"]["featured_image"] = 999999999
+        missing["en"]["featured_image"] = 999999999
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(missing),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("featured_image", response.json()["detail"])
+        self.assertFalse(BlogPostPage.objects.filter(stable_id="missing-image").exists())
+
+        malformed = self.blog_post_payload("malformed-image")
+        malformed["it"]["featured_image"] = {"id": 1}
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(malformed),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertFalse(BlogPostPage.objects.filter(stable_id="malformed-image").exists())
+
+        unsupported = self.payload("unsupported-image")
+        unsupported["it"]["featured_image"] = 1
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(unsupported),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("only supported for BlogPostPage", response.json()["detail"])
+        self.assertFalse(BlogIndexPage.objects.filter(stable_id="unsupported-image").exists())
+
+        image = self.featured_image()
+        rollback = self.blog_post_payload("rollback-image")
+        rollback["it"]["featured_image"] = image.id
+        rollback["en"]["featured_image"] = 999999999
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(rollback),
+            content_type="application/json",
+            **self.auth,
+        )
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertFalse(BlogPostPage.objects.filter(stable_id="rollback-image").exists())

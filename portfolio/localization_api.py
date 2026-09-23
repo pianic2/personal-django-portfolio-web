@@ -8,6 +8,7 @@ from ninja.errors import HttpError
 from pydantic import Field
 from wagtail.api.v3.auth import BearerTokenAuth
 from wagtail.api.v3.permissions import require_any_permission
+from wagtail.images import get_image_model
 from wagtail.models import Locale, Page, Site
 
 from .models import BlogIndexPage, BlogPostPage, ProfilePage, ProjectPage
@@ -68,6 +69,32 @@ def _page_fields(model: type[Page]) -> set[str]:
         for field in model._meta.concrete_fields
         if field.name not in PROTECTED_FIELDS
     }
+
+
+def _resolve_featured_image(model: type[Page], values: dict[str, Any]) -> dict[str, Any]:
+    """Resolve the supported featured-image contract before creating a page."""
+    if "featured_image" not in values:
+        return values
+    if model is not BlogPostPage:
+        raise ValidationError(
+            {"featured_image": "This field is only supported for BlogPostPage."}
+        )
+    image_id = values["featured_image"]
+    if image_id is None:
+        return values
+    if isinstance(image_id, bool) or not isinstance(image_id, int) or image_id <= 0:
+        raise ValidationError(
+            {"featured_image": "Use a positive image ID or null."}
+        )
+    try:
+        image = get_image_model().objects.get(pk=image_id)
+    except get_image_model().DoesNotExist:
+        raise ValidationError(
+            {"featured_image": f"Image with ID {image_id} does not exist."}
+        ) from None
+    resolved = values.copy()
+    resolved["featured_image"] = image
+    return resolved
 
 
 def _create_variant(
@@ -132,6 +159,7 @@ def _create_variant(
             {"stable_id": f"A {locale.language_code} page already uses this stable ID."}
         )
 
+    values = _resolve_featured_image(model, values)
     allowed_parent_fields = set() if model is BlogPostPage else {"parent_id"}
     unknown = set(values) - _page_fields(model) - allowed_parent_fields
     if unknown:
