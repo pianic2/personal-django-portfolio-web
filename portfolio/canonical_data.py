@@ -105,6 +105,18 @@ CANONICAL = json.loads(r'''{
       {
         "id": "automated-testing",
         "category": "quality"
+      },
+      {
+        "id": "python-ai",
+        "category": "backend"
+      },
+      {
+        "id": "multi-agent-systems",
+        "category": "architecture"
+      },
+      {
+        "id": "financial-data-analysis",
+        "category": "product"
       }
     ],
     "projects": [
@@ -223,6 +235,44 @@ CANONICAL = json.loads(r'''{
         "order": 2,
         "origin": "its-training",
         "visualVariant": "electric-cyan"
+      },
+      {
+        "id": "tradingagents",
+        "capabilityIds": [
+          "python-ai",
+          "multi-agent-systems",
+          "financial-data-analysis",
+          "automated-testing"
+        ],
+        "evidence": [
+          {
+            "id": "tradingagents-repository",
+            "type": "repository",
+            "url": "https://github.com/TauricResearch/TradingAgents"
+          },
+          {
+            "id": "tradingagents-paper",
+            "type": "documentation",
+            "url": "https://arxiv.org/abs/2412.20138"
+          }
+        ],
+        "links": [
+          {
+            "id": "tradingagents-github",
+            "kind": "repository",
+            "url": "https://github.com/TauricResearch/TradingAgents"
+          },
+          {
+            "id": "tradingagents-research",
+            "kind": "documentation",
+            "url": "https://arxiv.org/abs/2412.20138"
+          }
+        ],
+        "assetIds": [],
+        "featured": true,
+        "order": 3,
+        "origin": "personal-long-term",
+        "visualVariant": "signal-yellow"
       }
     ],
     "assets": []
@@ -541,6 +591,78 @@ CANONICAL = json.loads(r'''{
             "description": "Un backend compatto per gestire liste e attività, progettato per mantenere le route comprensibili, i dati persistenti e il comportamento facile da verificare.",
             "noIndex": false
           }
+        },
+        {
+          "projectId": "tradingagents",
+          "slug": "tradingagents",
+          "title": "TradingAgents",
+          "eyebrow": "PYTHON · AI · FINANZA",
+          "detailEyebrow": "PYTHON · LANGGRAPH · SISTEMI MULTI-AGENTE",
+          "ctaLabel": "Scopri TradingAgents",
+          "question": "Come può un sistema multi-agente trasformare dati di mercato e punti di vista diversi in una decisione analizzabile?",
+          "supportingText": "TradingAgents è un framework open source di ricerca che riproduce il confronto tra ruoli diversi di una società di trading, mantenendo separati analisi, dibattito, decisione e controllo del rischio.",
+          "whatIWorkedOn": "Ho studiato e documentato l’architettura del progetto: analisti specializzati, ricercatori bullish e bearish, trader, risk manager e portfolio manager coordinati con LangGraph.",
+          "futureImprovement": "Il passo successivo è approfondire la valutazione delle decisioni su periodi e mercati diversi, distinguendo sempre tra risultati sperimentali, qualità dei dati e comportamento non deterministico dei modelli.",
+          "originDescription": "TradingAgents è un progetto personale di esplorazione dell’intelligenza artificiale applicata all’analisi finanziaria e dei sistemi composti da agenti specializzati.",
+          "narrative": {
+            "cardSummary": "Un framework Python che coordina agenti AI specializzati in analisi fondamentale, sentiment, news, indicatori tecnici, ricerca e rischio.",
+            "cardValue": "Mostra come scomporre una decisione complessa in ruoli verificabili e collegati da un grafo di lavoro.",
+            "heroSummary": "TradingAgents è un framework open source che simula il lavoro di una società di trading attraverso una squadra di agenti AI specializzati.",
+            "idea": "Una singola risposta generata da un modello non rende visibile il confronto tra ipotesi, dati e rischi. TradingAgents affronta il problema dividendo il flusso in ruoli: gli analisti raccolgono prospettive diverse, i ricercatori le mettono in discussione e il team di rischio verifica la proposta prima della decisione finale.",
+            "built": "Il repository usa Python e LangGraph per orchestrare analisti fondamentali, sentiment, news e analisi tecnica, ricercatori bullish e bearish, trader, risk manager e portfolio manager. Include inoltre un’interfaccia CLI, configurazione per più provider LLM e strumenti per eseguire analisi e backtest su date e ticker.",
+            "value": "Il progetto è un esercizio concreto di architettura multi-agente: rende espliciti i passaggi di un ragionamento collaborativo e offre un codice aperto da studiare, configurare e valutare.",
+            "currentStage": "TradingAgents è uno strumento di ricerca. Non promette rendimenti, non sostituisce la consulenza finanziaria e i risultati possono cambiare in base a modello, temperatura, periodo analizzato, dati disponibili e natura non deterministica degli LLM.",
+            "evidenceIntroduction": "Il repository e il paper collegato documentano la struttura del framework, i ruoli degli agenti e il contesto di ricerca del progetto."
+          },
+          "claims": [
+            {
+              "id": "tradingagents-multi-agent-architecture",
+              "text": "Il repository documenta un framework multi-agente con analisti, ricercatori, trader e team di gestione del rischio.",
+              "status": "demonstrated",
+              "evidenceIds": [
+                "tradingagents-repository"
+              ]
+            },
+            {
+              "id": "tradingagents-research-scope",
+              "text": "Il progetto è presentato come framework di ricerca e non come consulenza finanziaria o garanzia di risultati di trading.",
+              "status": "demonstrated",
+              "evidenceIds": [
+                "tradingagents-repository",
+                "tradingagents-paper"
+              ]
+            }
+          ],
+          "evidence": [
+            {
+              "evidenceId": "tradingagents-repository",
+              "label": "Repository TradingAgents",
+              "description": "Il README ufficiale descrive l’architettura multi-agente, l’uso di LangGraph, la CLI, i provider LLM e i limiti del framework di ricerca.",
+              "linkLabel": "Apri il repository"
+            },
+            {
+              "evidenceId": "tradingagents-paper",
+              "label": "Paper di ricerca",
+              "description": "Il paper presenta TradingAgents come framework per studiare dinamiche collaborative tra agenti LLM nel contesto del trading finanziario.",
+              "linkLabel": "Leggi il paper"
+            }
+          ],
+          "links": [
+            {
+              "linkId": "tradingagents-github",
+              "label": "Repository GitHub"
+            },
+            {
+              "linkId": "tradingagents-research",
+              "label": "Paper di ricerca"
+            }
+          ],
+          "assets": [],
+          "metadata": {
+            "title": "TradingAgents",
+            "description": "Un framework Python open source che coordina agenti AI specializzati per studiare analisi finanziaria, dibattito tra ipotesi e gestione del rischio.",
+            "noIndex": false
+          }
         }
       ]
     },
@@ -855,6 +977,67 @@ CANONICAL = json.loads(r'''{
           "metadata": {
             "title": "ITS Node.js Project",
             "description": "A compact backend for managing lists and tasks, designed to keep routes understandable, data persistent and behaviour easy to verify.",
+            "noIndex": false
+          }
+        },
+        {
+          "projectId": "tradingagents",
+          "slug": "tradingagents",
+          "title": "TradingAgents",
+          "eyebrow": "PYTHON · AI · FINANCE",
+          "detailEyebrow": "PYTHON · LANGGRAPH · MULTI-AGENT SYSTEMS",
+          "ctaLabel": "Discover TradingAgents",
+          "question": "How can a multi-agent system turn market data and different perspectives into an analysable decision?",
+          "supportingText": "TradingAgents is an open-source research framework that models a trading firm's different roles while keeping analysis, debate, decision-making and risk control separate.",
+          "whatIWorkedOn": "I studied and documented the project architecture: specialised analysts, bullish and bearish researchers, traders, a risk manager and a portfolio manager coordinated with LangGraph.",
+          "futureImprovement": "The next step is to evaluate decisions across different periods and markets, always distinguishing experimental results, data quality and non-deterministic model behaviour.",
+          "originDescription": "TradingAgents is a personal project exploring artificial intelligence applied to financial analysis and systems composed of specialised agents.",
+          "narrative": {
+            "cardSummary": "A Python framework coordinating AI agents specialised in fundamental analysis, sentiment, news, technical indicators, research and risk.",
+            "cardValue": "It shows how to decompose a complex decision into verifiable roles connected by a workflow graph.",
+            "heroSummary": "TradingAgents is an open-source framework simulating the work of a trading firm through a team of specialised AI agents.",
+            "idea": "A single model-generated answer does not make the comparison between hypotheses, data and risks visible. TradingAgents addresses this by dividing the workflow into roles: analysts collect different perspectives, researchers challenge them, and the risk team checks the proposal before the final decision.",
+            "built": "The repository uses Python and LangGraph to orchestrate fundamental, sentiment, news and technical analysts, bullish and bearish researchers, traders, a risk manager and a portfolio manager. It also includes a CLI, multi-provider LLM configuration and tools for running analyses and backtests across dates and tickers.",
+            "value": "The project is a concrete exercise in multi-agent architecture: it makes the steps of collaborative reasoning explicit and provides open code to study, configure and evaluate.",
+            "currentStage": "TradingAgents is a research tool. It does not promise returns or replace financial advice, and results may vary with the model, temperature, analysed period, available data and the non-deterministic nature of LLMs.",
+            "evidenceIntroduction": "The repository and linked paper document the framework structure, agent roles and research context."
+          },
+          "claims": [
+            {
+              "id": "tradingagents-multi-agent-architecture",
+              "text": "The repository documents a multi-agent framework with analysts, researchers, traders and a risk-management team.",
+              "status": "demonstrated",
+              "evidenceIds": ["tradingagents-repository"]
+            },
+            {
+              "id": "tradingagents-research-scope",
+              "text": "The project is presented as a research framework rather than financial advice or a guarantee of trading results.",
+              "status": "demonstrated",
+              "evidenceIds": ["tradingagents-repository", "tradingagents-paper"]
+            }
+          ],
+          "evidence": [
+            {
+              "evidenceId": "tradingagents-repository",
+              "label": "TradingAgents repository",
+              "description": "The official README describes the multi-agent architecture, LangGraph usage, CLI, LLM providers and research-framework limitations.",
+              "linkLabel": "Open the GitHub repository"
+            },
+            {
+              "evidenceId": "tradingagents-paper",
+              "label": "Research paper",
+              "description": "The paper presents TradingAgents as a framework for studying collaborative dynamics between LLM agents in a trading context.",
+              "linkLabel": "Read the paper"
+            }
+          ],
+          "links": [
+            {"linkId": "tradingagents-github", "label": "GitHub repository"},
+            {"linkId": "tradingagents-research", "label": "Research paper"}
+          ],
+          "assets": [],
+          "metadata": {
+            "title": "TradingAgents",
+            "description": "An open-source Python framework coordinating specialised AI agents to study financial analysis, hypothesis debate and risk management.",
             "noIndex": false
           }
         }

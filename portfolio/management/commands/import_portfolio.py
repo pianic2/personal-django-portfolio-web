@@ -10,6 +10,7 @@ from wagtail.models import Locale, Site
 
 from portfolio.canonical_data import CANONICAL
 from portfolio.models import (
+    BlogIndexPage,
     Capability,
     CapabilityTranslation,
     ClaimEvidence,
@@ -38,6 +39,9 @@ CAPABILITY_LABELS = {
         "node-api": "Node.js ed Express",
         "sqlite-persistence": "Persistenza SQLite",
         "automated-testing": "Test automatici",
+        "python-ai": "Python e AI",
+        "multi-agent-systems": "Sistemi multi-agente",
+        "financial-data-analysis": "Analisi di dati finanziari",
     },
     "en": {
         "embedded-firmware": "ESP32-C3 sensors",
@@ -49,6 +53,9 @@ CAPABILITY_LABELS = {
         "node-api": "Node.js and Express",
         "sqlite-persistence": "SQLite persistence",
         "automated-testing": "Automated tests",
+        "python-ai": "Python and AI",
+        "multi-agent-systems": "Multi-agent systems",
+        "financial-data-analysis": "Financial data analysis",
     },
 }
 
@@ -86,6 +93,9 @@ class Command(BaseCommand):
             "evidence": 0,
             "links": 0,
         }
+
+        localized_roots = _ensure_localized_site_roots(root, locales)
+        _sync_blog_index(localized_roots, locales)
 
         for capability in SHARED["capabilities"]:
             obj, _ = Capability.objects.update_or_create(
@@ -208,6 +218,70 @@ class Command(BaseCommand):
         )
         output = json.dumps(report, ensure_ascii=False, sort_keys=True)
         self.stdout.write(output if options["as_json"] else "Imported " + output)
+
+
+def _ensure_localized_site_roots(root, locales):
+    """Ensure the canonical site root has both locale translations."""
+
+    localized_roots = {}
+    for code in LOCALES:
+        locale = locales[code]
+        if root.locale_id == locale.id:
+            localized_roots[code] = root
+        elif root.has_translation(locale):
+            localized_roots[code] = root.get_translation(locale)
+        else:
+            localized_roots[code] = root.copy_for_translation(
+                locale=locale, copy_parents=True
+            )
+    return localized_roots
+
+
+def _sync_blog_index(localized_roots, locales):
+    """Reconcile the canonical bilingual BlogIndex container."""
+
+    variants = {}
+    for code in LOCALES:
+        parent = localized_roots[code]
+        matches = list(
+            BlogIndexPage.objects.filter(locale=locales[code], stable_id="blog").order_by("pk")
+        )
+        page = next(
+            (candidate for candidate in matches if candidate.get_parent().pk == parent.pk),
+            matches[0] if matches else None,
+        )
+        for duplicate in matches:
+            if duplicate.pk != getattr(page, "pk", None):
+                duplicate.delete()
+        if page is None:
+            if code == "it":
+                page = parent.add_child(
+                    instance=BlogIndexPage(
+                        locale=locales[code], title="Blog", slug="blog", stable_id="blog"
+                    )
+                )
+            else:
+                page = BlogIndexPage.objects.get(
+                    locale=locales["it"], stable_id="blog"
+                ).copy_for_translation(locale=locales[code], copy_parents=True)
+        BlogIndexPage.objects.filter(pk=page.pk).update(
+            title="Blog",
+            slug="blog-it" if code == "it" else "blog-en",
+            stable_id="blog",
+            locale=locales[code],
+        )
+        page.refresh_from_db()
+        if page.get_parent().pk != parent.pk:
+            page.move(parent, pos="last-child")
+        variants[code] = page
+
+    if variants["en"].translation_key != variants["it"].translation_key:
+        BlogIndexPage.objects.filter(pk=variants["en"].pk).update(
+            translation_key=variants["it"].translation_key
+        )
+        variants["en"].refresh_from_db()
+    for page in variants.values():
+        page.save_revision().publish()
 
 
 def _sync_profile_children(profile, data):

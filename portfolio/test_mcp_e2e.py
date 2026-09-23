@@ -21,6 +21,7 @@ from wagtail.models import APIToken, Collection, GroupPagePermission, Locale, Pa
 from . import mcp_server
 from .mcp_server import _BearerTokenAuth, create_server
 from .models import BlogIndexPage, BlogPostPage, ProfilePage
+from .test_support import ensure_localized_site_roots
 
 
 class MCPAgentBoundaryTests(TransactionTestCase):
@@ -52,17 +53,8 @@ class MCPAgentBoundaryTests(TransactionTestCase):
                 hostname="localhost", root_page=homepage, is_default_site=True
             )
             Collection.add_root(instance=Collection(name="Root"))
+        ensure_localized_site_roots()
         call_command("import_portfolio", verbosity=0)
-        for locale in Locale.objects.order_by("language_code"):
-            parent = Page.objects.filter(locale=locale, depth=2).first()
-            blog_index = BlogIndexPage(
-                title=f"Blog {locale.language_code.upper()}",
-                slug=f"blog-{locale.language_code}",
-                stable_id=f"blog-{locale.language_code}",
-                locale=locale,
-            )
-            parent.add_child(instance=blog_index)
-            blog_index.save()
         call_command("configure_agent_account", verbosity=0)
         user = get_user_model().objects.get(username="portfolio-agent")
         self.assertFalse(user.has_perm("wagtailcore.publish_page"))
@@ -163,31 +155,31 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         self.assertNotIn(self.token, contract)
 
         captured_logs = []
-        global_discovery_calls = 0
-        scoped_discovery_calls = 0
+        discovery_calls = 1
         generation_calls = 0
+        generated_payload = None
 
-        def generate_bilingual_article(parent_ids):
-            nonlocal generation_calls
+        def generate_bilingual_article():
+            nonlocal generation_calls, generated_payload
             generation_calls += 1
-            return {
+            generated_payload = {
                 "type": "portfolio.BlogPostPage",
-                "stable_id": "mcp-draft-index",
+                "stable_id": "mcp-draft-post",
+                "parent_stable_id": "blog",
                 "it": {
-                    "parent_id": parent_ids["it"],
                     "title": "MCP draft post IT",
                     "slug": "mcp-draft-post-it",
-                    "excerpt": "A draft article excerpt.",
-                    "body": "Italian article body.",
+                    "excerpt": "Estratto",
+                    "body": "Corpo IT",
                 },
                 "en": {
-                    "parent_id": parent_ids["en"],
                     "title": "MCP draft post EN",
                     "slug": "mcp-draft-post-en",
-                    "excerpt": "An article draft excerpt.",
-                    "body": "English article body.",
+                    "excerpt": "Excerpt",
+                    "body": "Body EN",
                 },
             }
+            return generated_payload
 
         class TokenCheckingHandler(logging.Handler):
             def emit(self, record):
@@ -204,21 +196,10 @@ class MCPAgentBoundaryTests(TransactionTestCase):
             )
             self.assertIn("hero_description", json.dumps(read_result))
 
-            scoped_discovery_calls += 1
-            parent_inventory = self._call_mcp_tool(
-                server,
-                "list_pages",
-                {"type": ["portfolio.BlogIndexPage"]},
-            )
-            parent_ids = {
-                item["meta"]["locale"]: item["id"]
-                for item in parent_inventory["items"]
-                if item["meta"].get("type") == "portfolio.BlogIndexPage"
-                and item["meta"]["locale"] in {"it", "en"}
-            }
-            self.assertEqual(set(parent_ids), {"it", "en"}, parent_inventory)
             create_result = self._call_mcp_tool(
-                server, "create_localized_pair", generate_bilingual_article(parent_ids)
+                server,
+                "create_localized_pair",
+                generate_bilingual_article(),
             )
             created_id = next(
                 page["id"] for page in create_result["pages"] if page["locale"] == "it"
@@ -273,9 +254,16 @@ class MCPAgentBoundaryTests(TransactionTestCase):
             image_update_result,
         )
         self.assertTrue(all(self.token not in repr(result) for result in results))
-        self.assertEqual(global_discovery_calls, 0)
-        self.assertEqual(scoped_discovery_calls, 1)
+        self.assertEqual(discovery_calls, 1)
         self.assertEqual(generation_calls, 1)
+        self.assertEqual(
+            sum(
+                method == "GET" and path == "/api/v3/pages/"
+                for method, path, _ in upstream_requests
+            ),
+            0,
+        )
+        self.assertNotIn("parent_id", json.dumps(generated_payload))
         self.assertEqual(
             sum(
                 method == "POST" and path == "/api/v3/localized-pairs/"
@@ -325,6 +313,10 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         self.assertEqual(draft.title, "MCP revised draft index")
         self.assertEqual(draft.stable_id, english_draft.stable_id)
         self.assertEqual(draft.translation_key, english_draft.translation_key)
+        self.assertEqual(draft.get_parent().specific_class, BlogIndexPage)
+        self.assertEqual(english_draft.get_parent().specific_class, BlogIndexPage)
+        self.assertEqual(draft.get_parent().locale_id, draft.locale_id)
+        self.assertEqual(english_draft.get_parent().locale_id, english_draft.locale_id)
         self.assertGreater(draft.revisions.count(), 1)
         image = get_image_model().objects.get(title="MCP updated image")
         self.assertEqual(image.collection.name, "Portfolio agent content")
@@ -341,6 +333,7 @@ class MCPAgentBoundaryTests(TransactionTestCase):
         public_before = DjangoClient(HTTP_HOST="localhost").get(
             f"/api/v3/pages/{self.profile.pk}/"
         ).json()
+        root_id = Site.objects.get(is_default_site=True).root_page_id
         captured_logs = []
 
         class TokenCheckingHandler(logging.Handler):
@@ -359,6 +352,7 @@ class MCPAgentBoundaryTests(TransactionTestCase):
                     json={
                         "meta": {
                             "type": "portfolio.BlogIndexPage",
+                            "parent_id": root_id,
                             "action": "publish",
                         },
                         "title": "Must remain unpublished",

@@ -9,5 +9,6 @@ __pycache__/
 /staticfiles/
 .pytest_cache/
 .ruff_cache/
+.docker/postgres/
 coverage.xml
 htmlcov/
