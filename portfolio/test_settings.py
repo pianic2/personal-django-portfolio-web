@@ -32,6 +32,9 @@ def test_explicit_debug_mode_allows_development_fallback(monkeypatch):
     assert reloaded.DEBUG is True
     assert reloaded.SECRET_KEY == reloaded.DEVELOPMENT_SECRET_KEY
     assert reloaded.STORAGES["default"]["BACKEND"] == "django.core.files.storage.FileSystemStorage"
+    assert reloaded.STORAGES["staticfiles"]["BACKEND"] == (
+        "django.contrib.staticfiles.storage.StaticFilesStorage"
+    )
     assert reloaded.NUM_PROXIES == 0
     assert reloaded.CACHES["default"]["BACKEND"] == (
         "django.core.cache.backends.locmem.LocMemCache"

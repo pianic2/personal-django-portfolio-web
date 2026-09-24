@@ -13,7 +13,7 @@ Project
 - Backend: Django 5.2 LTS + Wagtail 8
 - Python: ">=3.13,<3.14"
 - Production database: PostgreSQL
-- Local bootstrap database: SQLite
+- Local development, test, and production database: PostgreSQL
 - Python tooling: "uv"
 - Tests: pytest / pytest-django
 - Linting: Ruff

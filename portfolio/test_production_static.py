@@ -6,7 +6,16 @@ from django.test import Client, SimpleTestCase, override_settings
 
 
 class ProductionStaticContractTests(SimpleTestCase):
-    @override_settings(DEBUG=False, SECURE_SSL_REDIRECT=False)
+    @override_settings(
+        DEBUG=False,
+        SECURE_SSL_REDIRECT=False,
+        STORAGES={
+            "default": settings.STORAGES["default"],
+            "staticfiles": {
+                "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+            },
+        },
+    )
     def test_wagtail_admin_static_asset_is_served(self):
         self.assertEqual(
             settings.STORAGES["staticfiles"]["BACKEND"],

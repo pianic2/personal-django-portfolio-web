@@ -1,1 +1,1 @@
-web: gunicorn portfolio.wsgi:application
+web: uv run gunicorn portfolio.wsgi:application

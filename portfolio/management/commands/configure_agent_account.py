@@ -79,7 +79,7 @@ class Command(BaseCommand):
                     group=group, page=page, permission=permission
                 )
 
-        for codename in ("add_image", "change_image"):
+        for codename in ("add_image", "change_image", "choose_image"):
             permission = Permission.objects.get(content_type=image_ct, codename=codename)
             GroupCollectionPermission.objects.create(
                 group=group, collection=content_collection, permission=permission

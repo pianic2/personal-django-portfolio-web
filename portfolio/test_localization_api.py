@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from django.apps import apps
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.color import no_style
@@ -12,7 +13,7 @@ from django.db import IntegrityError, close_old_connections, connection, transac
 from django.test import TestCase, TransactionTestCase
 from PIL import Image as PILImage
 from wagtail.images import get_image_model
-from wagtail.models import APIToken, Locale, Site
+from wagtail.models import APIToken, Collection, Locale, Site
 
 from .models import BlogIndexPage, BlogPostPage, ProfilePage, ProjectPage
 from .test_support import ensure_localized_site_roots
@@ -108,11 +109,14 @@ class LocalizedPairAPITests(TestCase):
             },
         }
 
-    def featured_image(self):
+    def featured_image(self, *, collection=None):
         image_data = BytesIO()
         PILImage.new("RGB", (2, 2), color="white").save(image_data, format="PNG")
+        if collection is None:
+            collection = Collection.objects.get(name="Portfolio agent content")
         image = get_image_model().objects.create(
             title="Localized pair image",
+            collection=collection,
             file=SimpleUploadedFile(
                 "localized-pair.png", image_data.getvalue(), content_type="image/png"
             ),
@@ -195,6 +199,55 @@ class LocalizedPairAPITests(TestCase):
         self.assertEqual(response.status_code, 400, response.content)
         self.assertIn("singleton", response.json()["detail"])
         self.assertEqual(ProfilePage.objects.count(), profile_count)
+
+    def test_wagtail_page_creation_rejects_noncanonical_profile_identity(self):
+        root = Site.objects.get(is_default_site=True).root_page
+        with self.assertRaisesMessage(ValidationError, "ProfilePage must use stable_id='profile'"):
+            root.add_child(
+                instance=ProfilePage(
+                    stable_id="second-profile",
+                    title="Second profile",
+                    slug="second-profile",
+                    hero_eyebrow="Hello",
+                    hero_description="Description",
+                    highlights_label="Highlights",
+                    closing_title="Closing",
+                    closing_description="Description",
+                )
+            )
+        self.assertFalse(ProfilePage.objects.filter(stable_id="second-profile").exists())
+
+        french_locale = Locale.objects.create(language_code="fr")
+        with self.assertRaisesMessage(ValidationError, "only in Italian and English"):
+            root.add_child(
+                instance=ProfilePage(
+                    locale=french_locale,
+                    stable_id="profile",
+                    title="Profil français",
+                    slug="profil-fr",
+                    hero_eyebrow="Bonjour",
+                    hero_description="Description",
+                    highlights_label="Points forts",
+                    closing_title="Fin",
+                    closing_description="Description finale",
+                )
+            )
+        self.assertFalse(ProfilePage.objects.filter(locale=french_locale).exists())
+
+    def test_localized_payload_rejects_inherited_page_internal_fields(self):
+        payload = self.payload("internal-owner")
+        payload["it"]["owner"] = 1
+
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **self.auth,
+        )
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertIn("Unsupported fields: owner", response.json()["detail"])
+        self.assertFalse(BlogIndexPage.objects.filter(stable_id="internal-owner").exists())
 
     def test_pair_creation_is_atomic_and_shares_translation_identity(self):
         response = self.client.post(
@@ -381,7 +434,7 @@ class LocalizedPairAPITests(TestCase):
             **self.auth,
         )
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("only supported for BlogPostPage", response.json()["detail"])
+        self.assertIn("Unsupported fields: featured_image", response.json()["detail"])
         self.assertFalse(BlogIndexPage.objects.filter(stable_id="unsupported-image").exists())
 
         image = self.featured_image()
@@ -396,6 +449,23 @@ class LocalizedPairAPITests(TestCase):
         )
         self.assertEqual(response.status_code, 400, response.content)
         self.assertFalse(BlogPostPage.objects.filter(stable_id="rollback-image").exists())
+
+    def test_featured_image_outside_authorized_collection_is_forbidden(self):
+        root_collection = Collection.get_root_nodes().get()
+        private_collection = root_collection.add_child(instance=Collection(name="Private images"))
+        image = self.featured_image(collection=private_collection)
+        payload = self.blog_post_payload("unauthorized-image")
+        payload["it"]["featured_image"] = image.id
+
+        response = self.client.post(
+            "/api/v3/localized-pairs/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            **self.auth,
+        )
+
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertFalse(BlogPostPage.objects.filter(stable_id="unauthorized-image").exists())
 
 
 class LocalizedStableIDConcurrencyTests(TransactionTestCase):

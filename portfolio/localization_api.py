@@ -56,16 +56,34 @@ STABLE_ID_CONSTRAINTS = {
     "unique_profile_locale_stable_id",
     "unique_project_locale_stable_id",
 }
-PROTECTED_FIELDS = {
-    "id",
-    "path",
-    "depth",
-    "numchild",
-    "url_path",
-    "locale",
-    "translation_key",
-    "live",
-    "stable_id",
+PUBLIC_PAGE_FIELDS = {
+    BlogIndexPage: {"stable_id"},
+    BlogPostPage: {"stable_id", "excerpt", "publication_date", "body", "featured_image"},
+    ProfilePage: {
+        "stable_id",
+        "hero_eyebrow",
+        "hero_description",
+        "highlights_label",
+        "closing_title",
+        "closing_description",
+    },
+    ProjectPage: {
+        "stable_id",
+        "eyebrow",
+        "detail_eyebrow",
+        "cta_label",
+        "question",
+        "supporting_text",
+        "what_i_worked_on",
+        "future_improvement",
+        "origin_description",
+        "narrative",
+        "metadata",
+        "origin",
+        "visual_variant",
+        "featured",
+        "display_order",
+    },
 }
 
 
@@ -85,14 +103,12 @@ def _is_stable_id_integrity_error(exc: IntegrityError) -> bool:
 
 
 def _page_fields(model: type[Page]) -> set[str]:
-    return {
-        field.name
-        for field in model._meta.concrete_fields
-        if field.name not in PROTECTED_FIELDS
-    }
+    return {"title", "slug"} | PUBLIC_PAGE_FIELDS[model]
 
 
-def _resolve_featured_image(model: type[Page], values: dict[str, Any]) -> dict[str, Any]:
+def _resolve_featured_image(
+    model: type[Page], values: dict[str, Any], user
+) -> dict[str, Any]:
     """Resolve the supported featured-image contract before creating a page."""
     if "featured_image" not in values:
         return values
@@ -113,6 +129,11 @@ def _resolve_featured_image(model: type[Page], values: dict[str, Any]) -> dict[s
         raise ValidationError(
             {"featured_image": f"Image with ID {image_id} does not exist."}
         ) from None
+    from wagtail.permissions import policy_registry
+
+    image_policy = policy_registry.get_by_type(get_image_model())
+    if not image_policy.user_has_permission_for_instance(user, "choose", image):
+        raise PermissionDenied("The caller cannot choose this featured image.")
     resolved = values.copy()
     resolved["featured_image"] = image
     return resolved
@@ -180,13 +201,13 @@ def _create_variant(
             {"stable_id": f"A {locale.language_code} page already uses this stable ID."}
         )
 
-    values = _resolve_featured_image(model, values)
     allowed_parent_fields = set() if model is BlogPostPage else {"parent_id"}
     unknown = set(values) - _page_fields(model) - allowed_parent_fields
     if unknown:
         raise ValidationError({"data": f"Unsupported fields: {', '.join(sorted(unknown))}."})
     if model is not BlogPostPage and "parent_id" not in values:
         raise ValidationError({"parent_id": "This field is required for each locale."})
+    values = _resolve_featured_image(model, values, user)
     page = model(locale=locale, stable_id=stable_id)
     if translation_key is not None:
         page.translation_key = translation_key
@@ -269,6 +290,8 @@ def create_localized_pair(
             400,
             f"Localized pair creation failed; no pages were created. {details}",
         ) from exc
+    except PermissionDenied as exc:
+        raise HttpError(403, str(exc)) from exc
 
     return Status(201, {
         "stable_id": data.stable_id,

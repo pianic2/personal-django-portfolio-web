@@ -53,7 +53,7 @@ The repository contains WSGI and ASGI entry points in `portfolio/wsgi.py` and
 repository Procfile:
 
 ```bash
-gunicorn portfolio.wsgi:application
+uv run gunicorn portfolio.wsgi:application
 ```
 
 Run `uv run python manage.py collectstatic --noinput` during the image/build

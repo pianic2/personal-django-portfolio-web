@@ -196,6 +196,15 @@ class ProfilePage(LocalizedPageMixin, Page):
             )
         ]
 
+    def clean(self) -> None:
+        super().clean()
+        if self.stable_id != "profile":
+            raise ValidationError({"stable_id": "ProfilePage must use stable_id='profile'."})
+        if self.locale_id and self.locale.language_code not in {"it", "en"}:
+            raise ValidationError(
+                {"locale": "ProfilePage is available only in Italian and English."}
+            )
+
 class ProfileSection(Orderable):
     page = ParentalKey(ProfilePage, on_delete=models.CASCADE, related_name="sections")
     stable_id = models.SlugField(max_length=100)

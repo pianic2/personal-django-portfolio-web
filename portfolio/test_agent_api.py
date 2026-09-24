@@ -89,6 +89,7 @@ class PortfolioAgentAPITests(TestCase):
             [
                 (content_collection.pk, "add_image"),
                 (content_collection.pk, "change_image"),
+                (content_collection.pk, "choose_image"),
             ],
         )
 
