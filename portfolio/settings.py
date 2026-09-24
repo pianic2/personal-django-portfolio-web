@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -35,13 +35,16 @@ def env_bool(name: str, *, default: bool) -> bool:
     raise RuntimeError(f"{name} must be a boolean value.")
 
 
-DEBUG = env_bool("DJANGO_DEBUG", default=True)
+DEBUG = env_bool("DJANGO_DEBUG", default=False)
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
+DEVELOPMENT_SECRET_KEY = "development-only-key-do-not-use-in-production"
 if not SECRET_KEY:
     if DEBUG:
-        SECRET_KEY = "development-only-key-do-not-use-in-production"
+        SECRET_KEY = DEVELOPMENT_SECRET_KEY
     else:
         raise RuntimeError("DJANGO_SECRET_KEY is required when DJANGO_DEBUG is false.")
+if not DEBUG and SECRET_KEY == DEVELOPMENT_SECRET_KEY:
+    raise RuntimeError("DJANGO_SECRET_KEY must not use the development secret in production.")
 if not DEBUG and (len(SECRET_KEY) < 50 or len(set(SECRET_KEY)) < 5):
     raise RuntimeError("DJANGO_SECRET_KEY must be a strong production secret.")
 
@@ -57,31 +60,102 @@ if not DEBUG and not ALLOWED_HOSTS:
 
 
 def database_config() -> dict[str, object]:
-    database_url = os.environ.get("DJANGO_DATABASE_URL", "sqlite:///db.sqlite3")
+    database_url = os.environ.get("DJANGO_DATABASE_URL")
+    if not database_url:
+        raise RuntimeError("DJANGO_DATABASE_URL must configure a PostgreSQL database.")
     parsed = urlparse(database_url)
-    if parsed.scheme == "sqlite":
-        path = unquote(parsed.path)
-        name = (
-            BASE_DIR / path.lstrip("/")
-            if path and not path.startswith("//")
-            else BASE_DIR / "db.sqlite3"
-        )
-        return {"ENGINE": "django.db.backends.sqlite3", "NAME": name}
     if parsed.scheme not in {"postgres", "postgresql"}:
-        raise RuntimeError("DJANGO_DATABASE_URL must use sqlite, postgres, or postgresql.")
-    if not parsed.hostname or not parsed.path:
+        raise RuntimeError("DJANGO_DATABASE_URL must use postgres or postgresql.")
+    db_name = unquote(parsed.path.lstrip("/"))
+    if not parsed.hostname or not db_name:
         raise RuntimeError("DJANGO_DATABASE_URL must include a PostgreSQL host and database name.")
-    return {
+    try:
+        port = parsed.port or 5432
+    except ValueError as exc:
+        raise RuntimeError("DJANGO_DATABASE_URL must contain a valid PostgreSQL port.") from exc
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    supported_options = {
+        "sslmode": {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"},
+        "channel_binding": {"disable", "prefer", "require"},
+        "connect_timeout": None,
+        "application_name": None,
+        "target_session_attrs": {"any", "read-write", "read-only", "primary", "standby"},
+        "pgbouncer": {"true", "false", "1", "0", "yes", "no", "on", "off"},
+    }
+    unsupported = sorted(set(query) - set(supported_options))
+    if unsupported:
+        raise RuntimeError(
+            "DJANGO_DATABASE_URL contains unsupported PostgreSQL option(s): "
+            + ", ".join(unsupported)
+        )
+
+    options: dict[str, str | int] = {}
+    for name, values in query.items():
+        if len(values) != 1 or not values[0]:
+            raise RuntimeError(f"DJANGO_DATABASE_URL option {name} must have one non-empty value.")
+        value = values[0]
+        allowed = supported_options[name]
+        if allowed is not None and value.lower() not in allowed:
+            raise RuntimeError(f"DJANGO_DATABASE_URL option {name} has an invalid value.")
+        if name == "connect_timeout":
+            try:
+                value = int(value)
+            except ValueError as exc:
+                raise RuntimeError(
+                    "DJANGO_DATABASE_URL option connect_timeout must be an integer."
+                ) from exc
+            if value < 0:
+                raise RuntimeError(
+                    "DJANGO_DATABASE_URL option connect_timeout must be non-negative."
+                )
+        elif name == "application_name":
+            value = unquote(value)
+        options[name] = value
+
+    local_host = parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+    sslmode = str(options.get("sslmode", "prefer" if local_host else "require"))
+    if not local_host and sslmode in {"disable", "allow", "prefer"}:
+        raise RuntimeError(
+            "DJANGO_DATABASE_URL must use sslmode=require or stronger for production hosts."
+        )
+    options["sslmode"] = sslmode
+    pgbouncer = str(options.pop("pgbouncer", "false")).lower() in {"true", "1", "yes", "on"}
+
+    config = {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": parsed.path.lstrip("/"),
+        "NAME": db_name,
         "USER": unquote(parsed.username or ""),
         "PASSWORD": unquote(parsed.password or ""),
         "HOST": parsed.hostname,
-        "PORT": parsed.port or 5432,
+        "PORT": port,
+        "OPTIONS": options,
     }
+    if pgbouncer:
+        config["DISABLE_SERVER_SIDE_CURSORS"] = True
+    return config
 
 
 DATABASES = {"default": database_config()}
+
+# Trust only the configured number of proxy hops when DRF resolves a client
+# address from X-Forwarded-For. Local development remains direct by default.
+try:
+    NUM_PROXIES = int(os.environ.get("DJANGO_NUM_PROXIES", "0" if DEBUG else "1"))
+except ValueError as exc:
+    raise RuntimeError("DJANGO_NUM_PROXIES must be a non-negative integer.") from exc
+if NUM_PROXIES < 0:
+    raise RuntimeError("DJANGO_NUM_PROXIES must be a non-negative integer.")
+
+CACHES = {
+    "default": {
+        "BACKEND": (
+            "django.core.cache.backends.locmem.LocMemCache"
+            if DEBUG
+            else "django.core.cache.backends.db.DatabaseCache"
+        ),
+        "LOCATION": "portfolio-local" if DEBUG else "django_cache_table",
+    }
+}
 
 INSTALLED_APPS = [
     "portfolio",
@@ -111,11 +185,13 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "portfolio.middleware.ImmutableStableIDMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "wagtail.contrib.redirects.middleware.RedirectMiddleware",
@@ -151,7 +227,50 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+STORAGES = {
+    "default": {
+        "BACKEND": (
+            "storages.backends.s3.S3Storage"
+            if not DEBUG
+            else "django.core.files.storage.FileSystemStorage"
+        ),
+    },
+    "staticfiles": {
+        "BACKEND": (
+            "whitenoise.storage.CompressedManifestStaticFilesStorage"
+            if not DEBUG
+            else "django.contrib.staticfiles.storage.StaticFilesStorage"
+        ),
+    },
+}
+if not DEBUG:
+    STORAGES["default"]["OPTIONS"] = {
+        "bucket_name": os.environ.get("AWS_STORAGE_BUCKET_NAME", ""),
+        "region_name": os.environ.get("AWS_S3_REGION_NAME") or None,
+        "endpoint_url": os.environ.get("AWS_S3_ENDPOINT_URL", "") or None,
+        "custom_domain": os.environ.get("AWS_S3_CUSTOM_DOMAIN", "") or None,
+        "querystring_auth": env_bool("AWS_QUERYSTRING_AUTH", default=False),
+        "default_acl": None,
+    }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+        },
+    },
+    "loggers": {
+        "django.request": {
+            "handlers": ["console"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+    },
+}
 
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
@@ -176,6 +295,14 @@ EMAIL_PORT = int(os.environ.get("DJANGO_EMAIL_PORT", "25"))
 EMAIL_HOST_USER = os.environ.get("DJANGO_EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("DJANGO_EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("DJANGO_EMAIL_USE_TLS", default=False)
+try:
+    EMAIL_TIMEOUT = int(os.environ.get("DJANGO_EMAIL_TIMEOUT", "10"))
+except ValueError:
+    raise RuntimeError(
+        "DJANGO_EMAIL_TIMEOUT must be a positive integer number of seconds"
+    ) from None
+if EMAIL_TIMEOUT <= 0:
+    raise RuntimeError("DJANGO_EMAIL_TIMEOUT must be a positive integer number of seconds")
 DEFAULT_FROM_EMAIL = os.environ.get("DJANGO_DEFAULT_FROM_EMAIL", "webmaster@localhost")
 CONTACT_RECIPIENT_EMAIL = os.environ.get("DJANGO_CONTACT_RECIPIENT_EMAIL", "")
 CONTACT_FROM_EMAIL = os.environ.get("DJANGO_CONTACT_FROM_EMAIL") or DEFAULT_FROM_EMAIL

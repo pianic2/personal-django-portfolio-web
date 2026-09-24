@@ -29,14 +29,16 @@ class AdminBrandingAndOwnershipTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, settings.ADMIN_SITE_HEADER)
-        self.assertContains(response, "portfolio/portfolio-mark.svg")
+        self.assertContains(response, "portfolio/portfolio-mark.")
+        self.assertContains(response, ".svg")
 
     def test_wagtail_admin_uses_portfolio_identity_and_favicon(self):
         response = self.client.get("/admin/")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, settings.WAGTAIL_SITE_NAME)
-        self.assertContains(response, "portfolio/portfolio-mark.svg")
+        self.assertContains(response, "portfolio/portfolio-mark.")
+        self.assertContains(response, ".svg")
 
     def test_django_admin_registers_only_standalone_capability_data(self):
         self.assertIn(Capability, admin.site._registry)

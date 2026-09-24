@@ -11,7 +11,7 @@ from django.test import TestCase, override_settings
 from django.urls import clear_url_caches, path, reverse
 from django.utils import timezone
 from wagtail.images.models import Image
-from wagtail.models import Site
+from wagtail.models import Locale, Site
 
 from .canonical_data import CANONICAL
 from .models import (
@@ -24,6 +24,7 @@ from .models import (
     ProjectPage,
     validate_portfolio_integrity,
 )
+from .test_support import ensure_localized_site_roots
 
 VALID_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -399,6 +400,7 @@ class PortfolioDomainModelTests(TestCase):
         self.assertFalse(item["featured"])
 
     def test_public_api_supports_localized_profile_and_project_use_cases(self):
+        ensure_localized_site_roots()
         call_command("import_portfolio", stdout=None)
 
         profile_response = self.client.get(
@@ -486,8 +488,103 @@ class PortfolioDomainModelTests(TestCase):
 
 
 class PortfolioImportTests(TestCase):
+    def setUp(self):
+        super().setUp()
+        ensure_localized_site_roots()
+
     def test_import_matches_backend_owned_canonical_subset_exactly(self):
         call_command("import_portfolio", stdout=None)
+
+        blog_indexes = BlogIndexPage.objects.filter(stable_id="blog").order_by("locale_id")
+        self.assertEqual(blog_indexes.count(), 2)
+        self.assertEqual(
+            set(blog_indexes.values_list("locale__language_code", flat=True)), {"it", "en"}
+        )
+        self.assertEqual(
+            {page.translation_key for page in blog_indexes},
+            {blog_indexes.first().translation_key},
+        )
+        site_root = Site.objects.get(is_default_site=True).root_page
+        localized_roots = {
+            code: site_root.get_translation(Locale.objects.get(language_code=code))
+            for code in ("it", "en")
+        }
+        self.assertEqual(
+            {
+                page.locale.language_code: page.get_parent().pk
+                for page in blog_indexes
+            },
+            {code: parent.pk for code, parent in localized_roots.items()},
+        )
+        self.assertEqual(
+            {
+                page.locale.language_code: page.get_parent().locale.language_code
+                for page in blog_indexes
+            },
+            {"it": "it", "en": "en"},
+        )
+        self.assertEqual(
+            {page.get_parent().translation_key for page in blog_indexes},
+            {site_root.translation_key},
+        )
+        self.assertEqual(
+            set(blog_indexes.values_list("slug", flat=True)), {"blog-it", "blog-en"}
+        )
+
+    def test_import_bootstraps_missing_site_root_translation(self):
+        site_root = Site.objects.get(is_default_site=True).root_page
+        english = Locale.objects.get(language_code="en")
+        site_root.get_translation(english).delete()
+
+        call_command("import_portfolio", stdout=None)
+
+        localized_roots = {
+            code: site_root.get_translation(Locale.objects.get(language_code=code))
+            for code in ("it", "en")
+        }
+        blog_indexes = BlogIndexPage.objects.filter(stable_id="blog")
+        self.assertEqual(blog_indexes.count(), 2)
+        self.assertEqual(
+            {page.locale.language_code: page.get_parent().pk for page in blog_indexes},
+            {code: root.pk for code, root in localized_roots.items()},
+        )
+        validate_portfolio_integrity()
+
+    @override_settings(ROOT_URLCONF="wagtail.urls")
+    def test_import_assigns_locale_correct_urls_without_duplicate_sites(self):
+        site = Site.objects.get(is_default_site=True)
+        english = Locale.objects.get(language_code="en")
+        site.root_page = site.root_page.get_translation(english)
+        site.save(update_fields=["root_page"])
+        call_command("import_portfolio", stdout=None)
+        site_count = Site.objects.count()
+        call_command("import_portfolio", stdout=None)
+
+        profiles = ProfilePage.objects.filter(stable_id="profile").select_related("locale")
+        urls = {profile.locale.language_code: profile.get_url() for profile in profiles}
+        self.assertEqual(set(urls), {"it", "en"})
+        self.assertEqual(set(urls.values()), {"/profilo/", "/profile/"}, urls)
+        self.assertEqual(Site.objects.count(), site_count)
+        self.assertEqual(
+            Site.objects.get(is_default_site=True).root_page.locale,
+            Locale.objects.get(language_code="it"),
+        )
+
+    def test_import_reconciles_missing_blog_translation_idempotently(self):
+        call_command("import_portfolio", stdout=None)
+        BlogIndexPage.objects.get(stable_id="blog", locale__language_code="en").delete()
+
+        call_command("import_portfolio", stdout=None)
+        first_ids = set(BlogIndexPage.objects.values_list("pk", flat=True))
+        call_command("import_portfolio", stdout=None)
+
+        blog_indexes = BlogIndexPage.objects.filter(stable_id="blog")
+        self.assertEqual(blog_indexes.count(), 2)
+        self.assertEqual(
+            set(blog_indexes.values_list("locale__language_code", flat=True)), {"it", "en"}
+        )
+        self.assertEqual(first_ids, set(blog_indexes.values_list("pk", flat=True)))
+        validate_portfolio_integrity()
 
         for code in ("it", "en"):
             locale = code
@@ -559,6 +656,20 @@ class PortfolioImportTests(TestCase):
         call_command("import_portfolio", "--json", stdout=output)
         from wagtail.models import Locale
 
+        expected_project_ids = tuple(
+            project["id"] for project in CANONICAL["shared"]["projects"]
+        )
+        expected_claim_count = sum(
+            len(project["claims"])
+            for locale in ("it", "en")
+            for project in CANONICAL["locales"][locale]["projects"]
+        )
+        expected_evidence_count = sum(
+            len(project["evidence"])
+            for locale in ("it", "en")
+            for project in CANONICAL["locales"][locale]["projects"]
+        )
+
         italian_locale = Locale.objects.get(language_code="it")
         english_locale = Locale.objects.get(language_code="en")
         report = json.loads(output.getvalue())
@@ -572,17 +683,13 @@ class PortfolioImportTests(TestCase):
         )
         self.assertEqual(
             len(report["project_identifiers"]),
-            6,
+            len(expected_project_ids) * 2,
         )
         self.assertEqual(
             {(item["stable_id"], item["locale"]) for item in report["project_identifiers"]},
             {
                 (project_id, locale)
-                for project_id in (
-                    "homeedge-ai-platform",
-                    "its-library-api-laravel",
-                    "node-list-manager",
-                )
+                for project_id in expected_project_ids
                 for locale in ("it", "en")
             },
         )
@@ -593,18 +700,14 @@ class PortfolioImportTests(TestCase):
             "evidence": ProjectEvidence.objects.count(),
         }
         self.assertEqual(first_counts["profiles"], 2)
-        self.assertEqual(first_counts["projects"], 6)
-        self.assertEqual(first_counts["claims"], 16)
-        self.assertEqual(first_counts["evidence"], 20)
+        self.assertEqual(first_counts["projects"], len(expected_project_ids) * 2)
+        self.assertEqual(first_counts["claims"], expected_claim_count)
+        self.assertEqual(first_counts["evidence"], expected_evidence_count)
         self.assertEqual(
             set(ProjectPage.objects.values_list("stable_id", "locale__language_code")),
             {
                 (project_id, locale)
-                for project_id in (
-                    "homeedge-ai-platform",
-                    "its-library-api-laravel",
-                    "node-list-manager",
-                )
+                for project_id in expected_project_ids
                 for locale in ("it", "en")
             },
         )
@@ -616,9 +719,10 @@ class PortfolioImportTests(TestCase):
                 ("its-library-api-laravel", "its-library-api-laravel"),
                 ("node-list-manager", "gestore-liste-node"),
                 ("node-list-manager", "node-list-manager"),
+                ("tradingagents", "tradingagents"),
             },
         )
-        for stable_id in ("homeedge-ai-platform", "its-library-api-laravel", "node-list-manager"):
+        for stable_id in expected_project_ids:
             variants = ProjectPage.objects.filter(stable_id=stable_id).order_by("locale_id")
             self.assertEqual({variant.locale.language_code for variant in variants}, {"it", "en"})
             self.assertEqual(

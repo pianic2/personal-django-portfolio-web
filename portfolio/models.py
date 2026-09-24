@@ -7,7 +7,7 @@ from modelcluster.fields import ParentalKey
 from wagtail.admin.panels import FieldPanel, InlinePanel, MultiFieldPanel
 from wagtail.api import APIField
 from wagtail.images import get_image_model_string
-from wagtail.models import Orderable, Page
+from wagtail.models import Locale, Orderable, Page, Site
 
 
 def _writable_api_fields(*names: str) -> list[APIField]:
@@ -20,6 +20,13 @@ class LocalizedPageMixin(models.Model):
     stable_id = models.SlugField(
         max_length=100,
         help_text="Stable editorial identifier shared by all locale translations.",
+    )
+    localized_locale = models.ForeignKey(
+        "wagtailcore.Locale",
+        on_delete=models.PROTECT,
+        editable=False,
+        related_name="+",
+        help_text="Database-localized locale key used for stable-id uniqueness.",
     )
 
     class Meta:
@@ -40,6 +47,9 @@ class LocalizedPageMixin(models.Model):
 
     def save(self, *args, **kwargs):
         clean = kwargs.pop("clean", True)
+        if not self.locale_id:
+            self.locale_id = self.get_parent().locale_id
+        self.localized_locale_id = self.locale_id
         if clean:
             self.full_clean()
         return super().save(*args, **kwargs)
@@ -52,6 +62,14 @@ class BlogIndexPage(LocalizedPageMixin, Page):
     subpage_types: list[str] = ["portfolio.BlogPostPage"]
     api_fields = _writable_api_fields("stable_id")
     content_panels = Page.content_panels + [FieldPanel("stable_id")]
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["localized_locale", "stable_id"],
+                name="unique_blog_index_locale_stable_id",
+            )
+        ]
 
 
 class BlogPostPage(LocalizedPageMixin, Page):
@@ -80,6 +98,14 @@ class BlogPostPage(LocalizedPageMixin, Page):
         FieldPanel("body"),
         FieldPanel("featured_image"),
     ]
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["localized_locale", "stable_id"],
+                name="unique_blog_post_locale_stable_id",
+            )
+        ]
 
 
 class Capability(models.Model):
@@ -161,6 +187,23 @@ class ProfilePage(LocalizedPageMixin, Page):
         InlinePanel("sections", label="Profile sections"),
         InlinePanel("useful_links", label="Useful links"),
     ]
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["localized_locale", "stable_id"],
+                name="unique_profile_locale_stable_id",
+            )
+        ]
+
+    def clean(self) -> None:
+        super().clean()
+        if self.stable_id != "profile":
+            raise ValidationError({"stable_id": "ProfilePage must use stable_id='profile'."})
+        if self.locale_id and self.locale.language_code not in {"it", "en"}:
+            raise ValidationError(
+                {"locale": "ProfilePage is available only in Italian and English."}
+            )
 
 class ProfileSection(Orderable):
     page = ParentalKey(ProfilePage, on_delete=models.CASCADE, related_name="sections")
@@ -283,6 +326,12 @@ class ProjectPage(LocalizedPageMixin, Page):
 
     class Meta:
         ordering = ["display_order", "stable_id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["localized_locale", "stable_id"],
+                name="unique_project_locale_stable_id",
+            )
+        ]
 
 
 class ProjectCapability(Orderable):
@@ -471,6 +520,43 @@ def validate_portfolio_integrity() -> None:
 
     required_locales = {"it", "en"}
     errors: list[str] = []
+
+    blog_variants = list(
+        BlogIndexPage.objects.select_related("locale").filter(stable_id="blog")
+    )
+    if len(blog_variants) != 2 or {
+        page.locale.language_code for page in blog_variants
+    } != required_locales:
+        errors.append("BlogIndex stable_id='blog' requires exactly one it and one en variant.")
+    elif len({str(page.translation_key) for page in blog_variants}) != 1:
+        errors.append("BlogIndex stable_id='blog' has conflicting translation families.")
+    if len(blog_variants) == 2 and {
+        page.locale.language_code for page in blog_variants
+    } == required_locales:
+        site_root = Site.objects.get(is_default_site=True).root_page
+        localized_roots = {
+            code: site_root.get_translation(
+                Locale.objects.get(language_code=code)
+            )
+            for code in required_locales
+        }
+        parents = {}
+        for page in blog_variants:
+            code = page.locale.language_code
+            parent = page.get_parent()
+            parents[code] = parent
+            if parent.locale_id != page.locale_id:
+                errors.append(
+                    f"BlogIndex stable_id='blog' {code} parent must use the same locale."
+                )
+            if parent.pk != localized_roots[code].pk:
+                errors.append(
+                    f"BlogIndex stable_id='blog' {code} must be under its localized site root."
+                )
+        if len({str(parent.translation_key) for parent in parents.values()}) != 1:
+            errors.append(
+                "BlogIndex stable_id='blog' parents have conflicting translation families."
+            )
 
     for model, label in ((ProfilePage, "Profile"), (ProjectPage, "Project")):
         groups: dict[str, list[tuple[str, str]]] = {}

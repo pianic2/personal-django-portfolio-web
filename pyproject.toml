@@ -7,9 +7,12 @@ dependencies = [
     "Django==5.2.17",
     "Wagtail==8.0",
     "django-cors-headers==4.9.0",
+    "django-storages[boto3]==1.14.6",
     "djangorestframework>=3.18,<4",
     "fastmcp>=2.14,<3",
+    "gunicorn==23.0.0",
     "psycopg[binary]==3.2.10",
+    "whitenoise==6.9.0",
 ]
 
 [dependency-groups]

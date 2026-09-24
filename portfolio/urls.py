@@ -5,12 +5,15 @@ from django.http import HttpResponseNotFound
 from django.urls import include, path
 from wagtail import urls as wagtail_urls
 from wagtail.admin import urls as wagtailadmin_urls
+from wagtail.api.v3.routers import pages as wagtail_pages
 from wagtail.api.v3.urls import api as wagtail_api
 from wagtail.documents import urls as wagtaildocs_urls
 
+from .api_visibility import get_pages_queryset
 from .contact import ContactView
 from .localization_api import router as localized_pairs_router
 
+wagtail_pages.get_pages_queryset = get_pages_queryset
 wagtail_api.add_router("/localized-pairs/", localized_pairs_router)
 
 

@@ -20,6 +20,7 @@ from wagtail.models import (
 from wagtail.permissions import policy_registry
 
 from .models import BlogIndexPage, BlogPostPage, ProfilePage, ProjectPage
+from .test_support import ensure_localized_site_roots
 
 
 def png_file(name="agent.png"):
@@ -31,6 +32,7 @@ def png_file(name="agent.png"):
 class PortfolioAgentAPITests(TestCase):
     @classmethod
     def setUpTestData(cls):
+        ensure_localized_site_roots()
         call_command("import_portfolio", verbosity=0)
 
     def setUp(self):
@@ -87,6 +89,7 @@ class PortfolioAgentAPITests(TestCase):
             [
                 (content_collection.pk, "add_image"),
                 (content_collection.pk, "change_image"),
+                (content_collection.pk, "choose_image"),
             ],
         )
 
@@ -118,6 +121,21 @@ class PortfolioAgentAPITests(TestCase):
             )
         )
         public_description = profile.hero_description
+
+        stable_id_update = self.client.patch(
+            f"/api/v3/pages/{profile.pk}/",
+            data=json.dumps(
+                {
+                    "meta": {"type": "portfolio.ProfilePage"},
+                    "stable_id": "changed-live-stable-id",
+                }
+            ),
+            content_type="application/json",
+            **self.authorization,
+        )
+        self.assertEqual(stable_id_update.status_code, 400, stable_id_update.content)
+        profile.refresh_from_db()
+        self.assertEqual(profile.stable_id, "profile")
 
         readable_draft = self.client.get(
             f"/api/v3/pages/{profile.pk}/?version=draft", **self.authorization
@@ -170,10 +188,8 @@ class PortfolioAgentAPITests(TestCase):
             content_type="application/json",
             **self.authorization,
         )
-        self.assertEqual(new_page.status_code, 201, new_page.content)
-        created = BlogIndexPage.objects.get(slug="agent-draft-index")
-        self.assertFalse(created.live)
-        self.assertEqual(self.client.get(f"/api/v3/pages/{created.pk}/").status_code, 404)
+        self.assertEqual(new_page.status_code, 403, new_page.content)
+        self.assertFalse(BlogIndexPage.objects.filter(slug="agent-draft-index").exists())
 
         publish = self.client.post(
             f"/api/v3/pages/{profile.pk}/actions/publish/",
@@ -182,6 +198,16 @@ class PortfolioAgentAPITests(TestCase):
         self.assertEqual(publish.status_code, 403)
         profile.refresh_from_db()
         self.assertEqual(profile.hero_description, public_description)
+
+    def test_bearer_token_cannot_delete_one_locale_of_a_pair(self):
+        profile = ProfilePage.objects.get(
+            locale=Locale.objects.get(language_code="en"), stable_id="profile"
+        )
+        deletion = self.client.delete(
+            f"/api/v3/pages/{profile.pk}/", **self.authorization
+        )
+        self.assertEqual(deletion.status_code, 403, deletion.content)
+        self.assertTrue(ProfilePage.objects.filter(pk=profile.pk).exists())
 
     def test_bearer_token_can_create_and_update_media_only_in_agent_collection(self):
         response = self.client.post(

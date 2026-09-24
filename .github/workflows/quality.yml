@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DJANGO_DATABASE_URL: postgresql://portfolio:portfolio@localhost:5432/portfolio
+      DJANGO_DEBUG: "true"
     services:
       postgres:
         image: postgres:18.4
