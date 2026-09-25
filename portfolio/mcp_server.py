@@ -7,12 +7,13 @@ import binascii
 import copy
 import json
 import os
+import secrets
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import urljoin
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.openapi import MCPType, RouteMap
 
 SUPPORTED_PAGE_ORDERING = (
@@ -39,6 +40,33 @@ class _BearerTokenAuth(httpx.Auth):
     def auth_flow(self, request: httpx.Request):
         request.headers["Authorization"] = f"Bearer {self._token}"
         yield request
+
+
+class _InboundTokenVerifier(TokenVerifier):
+    """Verify the dedicated token used by remote MCP clients."""
+
+    def __init__(self):
+        super().__init__()
+        self._inbound_token = os.environ.get("PDPW_MCP_INBOUND_TOKEN", "")
+        self._upstream_token = os.environ.get("WAGTAIL_AGENT_API_TOKEN", "")
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        expected = self._inbound_token
+        upstream = self._upstream_token
+        if (
+            not expected
+            or not token
+            or token != token.strip()
+            or (
+                upstream
+                and secrets.compare_digest(token.encode("utf-8"), upstream.encode("utf-8"))
+            )
+            or not secrets.compare_digest(
+                token.encode("utf-8"), expected.encode("utf-8")
+            )
+        ):
+            return None
+        return AccessToken(token=token, client_id="pdpw-mcp", scopes=[])
 
 
 def _reject_publication_bypass(request: httpx.Request) -> None:
@@ -227,7 +255,11 @@ def _customize_component(_route: Any, component: Any) -> None:
         component.output_schema = {"type": "object"}
 
 
-def create_server(openapi_spec: dict[str, Any], client: httpx.AsyncClient) -> FastMCP:
+def create_server(
+    openapi_spec: dict[str, Any],
+    client: httpx.AsyncClient,
+    auth_verifier: TokenVerifier | None = None,
+) -> FastMCP:
     """Build the MCP components from the supplied live Wagtail OpenAPI document."""
     openapi_spec = _prepare_agent_openapi_spec(openapi_spec)
     for hook in (_reject_publication_bypass_async, _encode_media_upload):
@@ -247,6 +279,7 @@ def create_server(openapi_spec: dict[str, Any], client: httpx.AsyncClient) -> Fa
         openapi_spec=openapi_spec,
         client=client,
         name="Portfolio content editor",
+        auth=auth_verifier or _InboundTokenVerifier(),
         route_maps=_route_maps(),
         mcp_component_fn=_customize_component,
         mcp_names={
@@ -269,30 +302,3 @@ def create_server(openapi_spec: dict[str, Any], client: httpx.AsyncClient) -> Fa
             "documents_update": "update_document",
         },
     )
-
-
-def build_server() -> FastMCP:
-    """Fetch this project's Wagtail schema and configure its server-side bearer client."""
-    base_url = os.environ.get("WAGTAIL_AGENT_API_URL", "").rstrip("/")
-    token = os.environ.get("WAGTAIL_AGENT_API_TOKEN", "")
-    if not base_url or not token:
-        raise RuntimeError("WAGTAIL_AGENT_API_URL and WAGTAIL_AGENT_API_TOKEN are required.")
-
-    schema_url = urljoin(f"{base_url}/", "api/v3/openapi.json")
-    response = httpx.get(schema_url, timeout=15.0)
-    response.raise_for_status()
-    client = httpx.AsyncClient(
-        base_url=base_url,
-        auth=_BearerTokenAuth(token),
-        timeout=30.0,
-        event_hooks={"request": [_reject_publication_bypass_async, _encode_media_upload]},
-    )
-    return create_server(response.json(), client)
-
-
-def main() -> None:
-    build_server().run()
-
-
-if __name__ == "__main__":
-    main()

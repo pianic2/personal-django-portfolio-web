@@ -73,11 +73,39 @@ include `Retry-After`.
 
 ## MCP integration
 
-`uv run python -m portfolio.mcp_server` fetches the Wagtail OpenAPI document
-from `WAGTAIL_AGENT_API_URL` and uses `WAGTAIL_AGENT_API_TOKEN` server-side.
+The canonical remote MCP endpoint is
+`https://pdpw-production.onrender.com/mcp`. It uses stateless Streamable HTTP
+over POST with JSON responses and a bearer token. Configure
+`PDPW_MCP_INBOUND_TOKEN` separately from `WAGTAIL_AGENT_API_TOKEN`; never put
+either value in published documentation or source control. Supply the inbound
+token only through the client's secret store; the Wagtail credential stays
+server-side.
+
+FastMCP runs inside Django's ASGI process. Its Wagtail OpenAPI schema is
+generated in-process, and MCP calls use the internal ASGI application with the
+Wagtail service credential. `/mcp` is canonical; `/mcp/` is accepted without
+a redirect. Requests without an Origin are allowed. Browser origins are denied
+unless an exact origin is configured in `PDPW_MCP_ALLOWED_ORIGINS`. GET is
+rejected and SSE is unavailable.
+
+Example client configuration (supply the token through the client's secret
+store):
+
+```json
+{
+  "url": "https://pdpw-production.onrender.com/mcp",
+  "headers": { "Authorization": "Bearer <PDPW_MCP_INBOUND_TOKEN>" }
+}
+```
+
 The exposed tools cover page list/find/detail/draft-update, localized-pair
 creation as the only page-creation path, page revisions, content-type schemas,
-and image/document list/create/detail/update. Generic page creation is not
-exposed. Unmatched Wagtail routes are excluded. Publish and unpublish actions
-are rejected in query parameters and recursively in request bodies.
-Image/document base64 data URLs are converted to multipart uploads.
+and image/document list/create/detail/update. Generic page creation and
+publish, unpublish, delete, and administrative tools are unavailable. Publish
+and unpublish actions are rejected in query parameters and recursively in
+request bodies. Image/document base64 data URLs are converted to multipart
+uploads. Draft writes remain unpublished.
+
+For local development, configure `PDPW_MCP_INBOUND_TOKEN` and
+`WAGTAIL_AGENT_API_TOKEN`, then run
+`uv run uvicorn portfolio.asgi:application --host 127.0.0.1 --port 8000 --lifespan on`.

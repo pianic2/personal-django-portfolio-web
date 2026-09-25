@@ -7,13 +7,16 @@ import json
 import logging
 import os
 from io import BytesIO
+from unittest.mock import patch
 
 import httpx
+from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.core.management import call_command
+from django.db import connections
 from django.test import Client as DjangoClient
-from django.test import TransactionTestCase
+from django.test import TransactionTestCase, override_settings
 from PIL import Image as PILImage
 from wagtail.images import get_image_model
 from wagtail.models import APIToken, Collection, GroupPagePermission, Locale, Page, Site
@@ -377,3 +380,252 @@ class MCPAgentBoundaryTests(TransactionTestCase):
             ).json(),
             public_before,
         )
+
+    @override_settings(SECURE_SSL_REDIRECT=True)
+    def test_composed_asgi_streamable_http_auth_and_bounded_draft(self):
+        from django.core.asgi import get_asgi_application
+
+        from .mcp_asgi import compose_asgi
+
+        inbound = "separate-inbound-test-token"
+        upstream = self.token
+        expected_tools = {
+            "list_pages", "create_localized_pair", "find_page", "get_page",
+            "update_page_draft", "list_page_revisions", "get_page_revision",
+            "list_content_types", "get_content_type_schema", "list_images",
+            "create_image", "get_image", "update_image", "list_documents",
+            "create_document", "get_document", "update_document",
+        }
+        with patch.dict(os.environ, {
+            "PDPW_MCP_INBOUND_TOKEN": inbound,
+            "WAGTAIL_AGENT_API_TOKEN": upstream,
+            "PDPW_MCP_ALLOWED_ORIGINS": "https://trusted.example",
+        }):
+            app = compose_asgi(get_asgi_application())
+
+        captured_logs = []
+
+        class TokenCheckingHandler(logging.Handler):
+            def emit(self, record):
+                captured_logs.append(self.format(record))
+
+        handler = TokenCheckingHandler()
+        components_logger = logging.getLogger("fastmcp.server.openapi.components")
+        previous_log_level = components_logger.level
+        components_logger.setLevel(logging.DEBUG)
+        logging.getLogger().addHandler(handler)
+
+        async def exercise():
+            async with app.mcp_app.router.lifespan_context(app.mcp_app):
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app),
+                    base_url="https://localhost",
+                    follow_redirects=False,
+                ) as client:
+                    async def call_tool(request_id, name, arguments):
+                        response = await client.post(
+                            "/mcp",
+                            json={
+                                "jsonrpc": "2.0", "id": request_id,
+                                "method": "tools/call",
+                                "params": {"name": name, "arguments": arguments},
+                            },
+                            headers=headers,
+                        )
+                        self.assertEqual(response.status_code, 200, response.text)
+                        envelope = response.json()
+                        self.assertNotIn("error", envelope)
+                        return response, envelope["result"]
+
+                    init_body = {
+                        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-03-26", "capabilities": {},
+                            "clientInfo": {"name": "transport-test", "version": "1"},
+                        },
+                    }
+                    missing = await client.post("/mcp", json=init_body)
+                    self.assertEqual(missing.status_code, 401)
+                    self.assertTrue(missing.headers["www-authenticate"].startswith("Bearer"))
+                    for bad_token in ("wrong", upstream):
+                        rejected = await client.post(
+                            "/mcp", json=init_body,
+                            headers={"Authorization": f"Bearer {bad_token}"},
+                        )
+                        self.assertEqual(rejected.status_code, 401)
+                        self.assertIn("Bearer", rejected.headers["www-authenticate"])
+
+                    headers = {
+                        "Authorization": f"Bearer {inbound}",
+                        "Accept": "application/json",
+                    }
+                    for path in ("/mcp", "/mcp/"):
+                        response = await client.post(path, json=init_body, headers=headers)
+                        self.assertEqual(response.status_code, 200)
+                        self.assertEqual(response.json()["result"]["protocolVersion"], "2025-03-26")
+                    for origin_headers, expected_status in (
+                        ({}, 200),
+                        ({"Origin": "https://trusted.example"}, 200),
+                        ({"Origin": "https://foreign.example"}, 403),
+                        ({"Origin": "null"}, 403),
+                        (
+                            [
+                                ("Origin", "https://trusted.example"),
+                                ("Origin", "https://trusted.example"),
+                            ],
+                            403,
+                        ),
+                    ):
+                        response = await client.post(
+                            "/mcp", json=init_body,
+                            headers=[*headers.items(), *(
+                                origin_headers.items() if isinstance(origin_headers, dict)
+                                else origin_headers
+                            )],
+                        )
+                        self.assertEqual(response.status_code, expected_status)
+
+                    unauthenticated_get = await client.get("/mcp")
+                    self.assertEqual(unauthenticated_get.status_code, 401)
+                    self.assertIn(
+                        "Bearer", unauthenticated_get.headers["www-authenticate"]
+                    )
+                    get_response = await client.get("/mcp", headers=headers)
+                    self.assertEqual(get_response.status_code, 405)
+                    self.assertNotIn(
+                        "text/event-stream", get_response.headers.get("content-type", "")
+                    )
+
+                    tools_response = await client.post(
+                        "/mcp",
+                        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+                        headers=headers,
+                    )
+                    self.assertEqual(
+                        {tool["name"] for tool in tools_response.json()["result"]["tools"]},
+                        expected_tools,
+                    )
+                    content_types_response, content_types_result = await call_tool(
+                        3, "list_content_types", {}
+                    )
+                    self.assertIs(content_types_result.get("isError", False), False)
+                    self.assertIn("portfolio.BlogPostPage", json.dumps(content_types_result))
+
+                    read_response, read_result = await call_tool(
+                        4, "get_page", {"page_id": self.profile.pk}
+                    )
+                    self.assertIs(read_result.get("isError", False), False)
+                    self.assertIn("hero_description", json.dumps(read_result))
+
+                    draft_response, draft_result = await call_tool(
+                        5,
+                        "create_localized_pair",
+                        {
+                                    "type": "portfolio.BlogPostPage",
+                                    "stable_id": "pdpw-63-mcp-transport-test",
+                                    "parent_stable_id": "blog",
+                                    "it": {
+                                        "title": "MCP transport IT draft",
+                                        "slug": "pdpw-63-mcp-transport-it",
+                                        "excerpt": "Bozza",
+                                        "body": "Contenuto IT",
+                                    },
+                                    "en": {
+                                        "title": "MCP transport EN draft",
+                                        "slug": "pdpw-63-mcp-transport-en",
+                                        "excerpt": "Draft",
+                                        "body": "English content",
+                                    },
+                        },
+                    )
+                    self.assertIs(draft_result.get("isError", False), False)
+                    self.assertIn("structuredContent", draft_result)
+                    page_payloads = draft_result["structuredContent"]["pages"]
+                    self.assertEqual({page["locale"] for page in page_payloads}, {"it", "en"})
+                    page_ids = [page["id"] for page in page_payloads]
+                    self.assertEqual(len(page_ids), 2)
+                    self.assertEqual(len(set(page_ids)), 2)
+                    drafts = [BlogPostPage.objects.get(pk=page_id) for page_id in page_ids]
+                    self.assertTrue(all(not page.live for page in drafts))
+                    self.assertEqual(
+                        len({page.translation_key for page in drafts}), 1
+                    )
+                    original_page_state = {
+                        page.pk: (
+                            page.title,
+                            page.live,
+                            page.latest_revision_id,
+                            list(page.revisions.values_list("id", flat=True)),
+                        )
+                        for page in drafts
+                    }
+                    for page_id in page_ids:
+                        public_response = DjangoClient(HTTP_HOST="localhost").get(
+                            f"/api/v3/pages/{page_id}/", secure=True
+                        )
+                        self.assertEqual(public_response.status_code, 404)
+
+                    for request_id, action in enumerate(("publish", "unpublish"), start=6):
+                        rejected_response, rejected_result = await call_tool(
+                            request_id,
+                            "update_page_draft",
+                            {
+                                "page_id": page_ids[0],
+                                "data": {
+                                    "meta": {
+                                        "type": "portfolio.BlogPostPage",
+                                        "action": action,
+                                    },
+                                    "title": "Must remain an unpublished draft",
+                                },
+                            },
+                        )
+                        self.assertIs(rejected_result.get("isError"), True)
+                        rejected_text = json.dumps(rejected_result)
+                        self.assertIn(
+                            "Publication actions are not available", rejected_text
+                        )
+                        self.assertNotIn(inbound, rejected_response.text)
+                        self.assertNotIn(upstream, rejected_response.text)
+                        for page in drafts:
+                            page.refresh_from_db()
+                            self.assertEqual(
+                                (
+                                    page.title,
+                                    page.live,
+                                    page.latest_revision_id,
+                                    list(page.revisions.values_list("id", flat=True)),
+                                ),
+                                original_page_state[page.pk],
+                            )
+                    for page_id in page_ids:
+                        public_response = DjangoClient(HTTP_HOST="localhost").get(
+                            f"/api/v3/pages/{page_id}/", secure=True
+                        )
+                        self.assertEqual(public_response.status_code, 404)
+                    response_text = json.dumps(
+                        [
+                            missing.text,
+                            tools_response.text,
+                            content_types_response.text,
+                            read_response.text,
+                            draft_response.text,
+                        ]
+                    )
+                    self.assertNotIn(inbound, response_text)
+                    self.assertNotIn(upstream, response_text)
+            await sync_to_async(connections.close_all, thread_sensitive=True)()
+
+        old_async_unsafe = os.environ.get("DJANGO_ALLOW_ASYNC_UNSAFE")
+        os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = "true"
+        try:
+            asyncio.run(exercise())
+        finally:
+            if old_async_unsafe is None:
+                os.environ.pop("DJANGO_ALLOW_ASYNC_UNSAFE", None)
+            else:
+                os.environ["DJANGO_ALLOW_ASYNC_UNSAFE"] = old_async_unsafe
+            logging.getLogger().removeHandler(handler)
+            components_logger.setLevel(previous_log_level)
+        self.assertTrue(all(inbound not in entry for entry in captured_logs))
+        self.assertTrue(all(upstream not in entry for entry in captured_logs))
