@@ -86,11 +86,17 @@ OAuth client registrations, authorization transactions, codes, refresh metadata,
 and token mappings use the existing PostgreSQL-backed Django cache table
 `django_cache_table`; create it after migrations with
 `uv run python manage.py createcachetable django_cache_table`. Do not use the
-ephemeral disk store in production. Rotate the Google client secret and signing
-key in Render, restart the service, and revoke upstream sessions/tokens in the
-Google console. Remove an identity from `PDPW_OAUTH_ALLOWED_IDENTITIES` and
-restart to revoke its access. G2/G3/G5 provider dashboard, secret provisioning,
-and interactive smoke checks remain owner-gated.
+ephemeral disk store in production. `PDPW_OAUTH_STORAGE_ENCRYPTION_KEY` is a
+separate Fernet key used to encrypt every OAuth value before it enters the
+cache. Generate it with `uv run python -c "from cryptography.fernet import
+Fernet; print(Fernet.generate_key().decode())"`. Rotating it invalidates
+existing OAuth client/session state and requires clients to authorize again;
+it is independent from the Google client secret and JWT signing key. Rotate
+the Google client secret and signing key in Render, restart the service, and
+revoke upstream sessions/tokens in the Google console. Remove an identity from
+`PDPW_OAUTH_ALLOWED_IDENTITIES` and restart to revoke its access. G2/G3/G5
+provider dashboard, secret provisioning, and interactive smoke checks remain
+owner-gated.
 
 After deployment, smoke-check that POST `/mcp` without authorization returns
 401 with a Bearer challenge, then use the configured bearer token to initialize,

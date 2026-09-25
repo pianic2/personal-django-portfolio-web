@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, SupportsFloat
 
 import httpx
 from asgiref.sync import sync_to_async
+from cryptography.fernet import Fernet
 from django.core.cache import cache
 from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 
 
 class DatabaseCacheKeyValue:
@@ -36,6 +38,29 @@ class DatabaseCacheKeyValue:
 
     async def delete(self, key: str, *, collection: str | None = None) -> bool:
         return bool(await sync_to_async(cache.delete)(self._key(collection, key)))
+
+    async def get_many(self, keys: Sequence[str], *, collection: str | None = None):
+        return [await self.get(key, collection=collection) for key in keys]
+
+    async def ttl(self, key: str, *, collection: str | None = None):
+        return await self.get(key, collection=collection), None
+
+    async def ttl_many(self, keys: Sequence[str], *, collection: str | None = None):
+        return [await self.ttl(key, collection=collection) for key in keys]
+
+    async def put_many(
+        self,
+        keys: Sequence[str],
+        values: Sequence[Mapping[str, Any]],
+        *,
+        collection: str | None = None,
+        ttl: SupportsFloat | None = None,
+    ) -> None:
+        for key, value in zip(keys, values, strict=True):
+            await self.put(key, value, collection=collection, ttl=ttl)
+
+    async def delete_many(self, keys: Sequence[str], *, collection: str | None = None) -> int:
+        return sum([await self.delete(key, collection=collection) for key in keys])
 
 
 class GoogleIdentityVerifier(TokenVerifier):
@@ -93,6 +118,7 @@ def create_oauth_proxy() -> OAuthProxy | None:
         "PDPW_OAUTH_UPSTREAM_CLIENT_SECRET",
         "PDPW_OAUTH_JWT_SIGNING_KEY",
         "PDPW_OAUTH_ALLOWED_IDENTITIES",
+        "PDPW_OAUTH_STORAGE_ENCRYPTION_KEY",
     )
     configured = [bool(os.environ.get(name, "").strip()) for name in names]
     if not any(configured):
@@ -127,7 +153,10 @@ def create_oauth_proxy() -> OAuthProxy | None:
         forward_pkce=True,
         extra_authorize_params={"access_type": "offline", "prompt": "consent"},
         extra_token_params={"access_type": "offline"},
-        client_storage=DatabaseCacheKeyValue(),
+        client_storage=FernetEncryptionWrapper(
+            DatabaseCacheKeyValue(),
+            fernet=Fernet(values["PDPW_OAUTH_STORAGE_ENCRYPTION_KEY"].encode()),
+        ),
         jwt_signing_key=values["PDPW_OAUTH_JWT_SIGNING_KEY"],
         require_authorization_consent=True,
     )
