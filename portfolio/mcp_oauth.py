@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any, SupportsFloat
 
 import httpx
 from asgiref.sync import sync_to_async
 from cryptography.fernet import Fernet
-from django.core.cache import cache
+from django.core.cache import cache, caches
+from django.db import connections, router
+from django.utils import timezone
 from fastmcp.server.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
@@ -43,7 +46,13 @@ class DatabaseCacheKeyValue:
         return [await self.get(key, collection=collection) for key in keys]
 
     async def ttl(self, key: str, *, collection: str | None = None):
-        return await self.get(key, collection=collection), None
+        value, expires = await sync_to_async(self._get_with_expiry)(
+            key, collection=collection
+        )
+        if expires is None:
+            return value, None
+        remaining = (expires - timezone.now()).total_seconds()
+        return value, max(0.0, remaining)
 
     async def ttl_many(self, keys: Sequence[str], *, collection: str | None = None):
         return [await self.ttl(key, collection=collection) for key in keys]
@@ -61,6 +70,35 @@ class DatabaseCacheKeyValue:
 
     async def delete_many(self, keys: Sequence[str], *, collection: str | None = None) -> int:
         return sum([await self.delete(key, collection=collection) for key in keys])
+
+    def _get_with_expiry(
+        self, key: str, *, collection: str | None = None
+    ) -> tuple[dict[str, Any] | None, datetime | None]:
+        """Read a database cache value and its expiry in one backend operation."""
+        backend = caches["default"]
+        table = getattr(backend, "_table", None)
+        if table is None:
+            return cache.get(self._key(collection, key)), None
+
+        cache_key = backend.make_and_validate_key(self._key(collection, key))
+        connection = connections[router.db_for_read(backend.cache_model_class)]
+        quote_name = connection.ops.quote_name
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT {quote_name('value')}, {quote_name('expires')} "
+                f"FROM {quote_name(table)} WHERE {quote_name('cache_key')} = %s",
+                [cache_key],
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return None, None
+        value = cache.get(self._key(collection, key))
+        if value is None:
+            return None, None
+        expires = row[1]
+        if timezone.is_naive(expires):
+            expires = timezone.make_aware(expires)
+        return value if isinstance(value, dict) else None, expires
 
 
 class GoogleIdentityVerifier(TokenVerifier):
@@ -91,7 +129,7 @@ class GoogleIdentityVerifier(TokenVerifier):
             not isinstance(subject, str)
             or not subject
             or not isinstance(email, str)
-            or not claims.get("email_verified")
+            or claims.get("email_verified") is not True
             or email.casefold() not in self.allowed_identities
         ):
             return None

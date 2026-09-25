@@ -1,9 +1,13 @@
+import asyncio
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+from asgiref.sync import sync_to_async
 from cryptography.fernet import Fernet
+from django.core.management import call_command
+from django.test import override_settings
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from starlette.routing import Router
 
@@ -119,6 +123,7 @@ class OAuthTests(IsolatedAsyncioTestCase):
         for claims in (
             {"email": "nome@example.com", "email_verified": True},
             {"sub": "subject", "email": "nome@example.com", "email_verified": False},
+            {"sub": "subject", "email": "nome@example.com", "email_verified": "true"},
             {"sub": "subject", "email": "nome@example.com"},
         ):
             response = MagicMock(status_code=200)
@@ -169,6 +174,45 @@ class OAuthTests(IsolatedAsyncioTestCase):
             }
             assert await second.delete("state", collection="transactions")
             assert await second.get("state", collection="transactions") is None
+
+    @pytest.mark.django_db
+    async def test_encrypted_store_uses_database_cache_ttl_and_expiry(self):
+        cache_settings = {
+            "default": {
+                "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+                "LOCATION": "django_cache_table",
+            }
+        }
+        with override_settings(CACHES=cache_settings):
+            from django.core.cache import cache, caches
+
+            caches.close_all()
+            if hasattr(caches._connections, "default"):
+                del caches._connections.default
+            await sync_to_async(call_command)(
+                "createcachetable", "django_cache_table", verbosity=0
+            )
+            await sync_to_async(cache.clear)()
+            key = Fernet.generate_key()
+            store = FernetEncryptionWrapper(
+                DatabaseCacheKeyValue(), fernet=Fernet(key)
+            )
+            await store.put(
+                "state", {"secret": "oauth-code"}, collection="transactions", ttl=2
+            )
+            value, ttl = await store.ttl("state", collection="transactions")
+            assert value == {"secret": "oauth-code"}
+            assert ttl is not None and 0 < ttl <= 2
+            await asyncio.sleep(2.1)
+            assert await store.get("state", collection="transactions") is None
+            await store.put(
+                "state", {"secret": "oauth-code"}, collection="transactions", ttl=30
+            )
+            await store.delete("state", collection="transactions")
+            assert await store.get("state", collection="transactions") is None
+            from django.db import close_old_connections
+
+            await sync_to_async(close_old_connections)()
 
     async def test_oauth_discovery_and_invalid_token_routes(self):
         proxy = create_oauth_proxy_for_test()
