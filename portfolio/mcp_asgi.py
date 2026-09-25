@@ -85,6 +85,22 @@ class MCPBoundary:
         await self.mcp_app(normalized, receive, send)
 
 
+class _DjangoASGIAuthorityAdapter:
+    """Fill HTTPX's omitted default port before Django builds its request."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            server = scope.get("server")
+            if server is not None and server[1] is None:
+                default_port = {"http": 80, "https": 443}.get(scope.get("scheme"))
+                if default_port is not None:
+                    scope = dict(scope, server=(server[0], default_port))
+        await self.app(scope, receive, send)
+
+
 def _valid_origin(value: str, allowed_origins: set[str] | None = None) -> bool:
     if value == "null" or value != value.strip():
         return False
@@ -128,8 +144,8 @@ def compose_asgi(django_app):
     allowed_hosts = [host for host in settings.ALLOWED_HOSTS if host != "*"]
     internal_host = allowed_hosts[0] if allowed_hosts else "localhost"
     client = httpx.AsyncClient(
-        base_url=f"http://{internal_host}",
-        transport=httpx.ASGITransport(app=django_app),
+        base_url=f"https://{internal_host}",
+        transport=httpx.ASGITransport(app=_DjangoASGIAuthorityAdapter(django_app)),
         auth=_BearerTokenAuth(token),
         timeout=30.0,
         event_hooks={"request": [_reject_publication_bypass_async, _encode_media_upload]},

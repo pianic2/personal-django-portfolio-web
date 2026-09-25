@@ -4,13 +4,39 @@ import asyncio
 import os
 from unittest.mock import patch
 
+import httpx
 from django.test import SimpleTestCase
 
-from .mcp_asgi import _valid_origin
+from .mcp_asgi import _DjangoASGIAuthorityAdapter, _valid_origin
 from .mcp_server import _InboundTokenVerifier
 
 
 class MCPASGISecurityConfigTests(SimpleTestCase):
+    def test_internal_asgi_adapter_preserves_default_and_nondefault_ports(self):
+        self.assertIsNone(httpx.URL("https://localhost").port)
+        observed = []
+
+        async def inspect_scope(scope, receive, send):
+            observed.append((scope["scheme"], scope["server"][1]))
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+
+        async def exercise():
+            adapter = _DjangoASGIAuthorityAdapter(inspect_scope)
+            for base_url, expected_port in (
+                ("https://localhost", 443),
+                ("https://localhost:8443", 8443),
+            ):
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=adapter),
+                    base_url=base_url,
+                ) as client:
+                    response = await client.get("/probe")
+                    self.assertEqual(response.status_code, 200)
+                self.assertEqual(observed[-1], ("https", expected_port))
+
+        asyncio.run(exercise())
+
     def test_inbound_verifier_accepts_only_dedicated_token(self):
         async def verify(token):
             return await _InboundTokenVerifier().verify_token(token)
