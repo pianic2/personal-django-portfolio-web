@@ -49,12 +49,32 @@ neither the root content route nor media files in production; use the Wagtail
 and deployment infrastructure for those responsibilities.
 
 The repository contains WSGI and ASGI entry points in `portfolio/wsgi.py` and
-`portfolio/asgi.py`. The supported production web process is Gunicorn via the
-repository Procfile:
+`portfolio/asgi.py`. Render runs the composed Django/FastMCP ASGI application
+through the repository Procfile, with lifespan enabled:
 
 ```bash
-uv run gunicorn portfolio.wsgi:application
+uv run uvicorn portfolio.asgi:application --host 0.0.0.0 --port $PORT --lifespan on
 ```
+
+Set `PDPW_MCP_INBOUND_TOKEN` to a strong secret distinct from
+`WAGTAIL_AGENT_API_TOKEN`. An empty token disables successful MCP
+authentication. `PDPW_MCP_ALLOWED_ORIGINS` is optional; unset means browser
+Origins are denied. The canonical client endpoint is
+`https://pdpw-production.onrender.com/mcp`.
+Restart the Render service after changing either credential or the Origin list;
+the ASGI application snapshots those values at startup.
+
+After deployment, smoke-check that POST `/mcp` without authorization returns
+401 with a Bearer challenge, then use the configured bearer token to initialize,
+list tools, and make a safe read. Test a slash-appended `/mcp/` URL; it must not
+redirect. Confirm GET does not establish SSE. If a bounded draft smoke write is
+authorized, use the stable ID `pdpw-63-mcp-smoke`, verify it is absent from the
+public pages API, record both locale IDs, and clean it up through Wagtail admin
+after verification. Do not retry a write whose result is ambiguous.
+
+Before deployment, an external unauthenticated POST `/mcp` with a valid
+initialize request returned 404 with an HTML body and
+`x-render-origin-server: gunicorn`. No credential was sent in that probe.
 
 Run `uv run python manage.py collectstatic --noinput` during the image/build
 step. WhiteNoise serves the resulting manifest-backed files at `/static/` when

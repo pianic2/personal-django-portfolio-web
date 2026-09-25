@@ -33,8 +33,9 @@ Do not commit secrets. The supported variables are:
 | `DJANGO_CONTACT_RECIPIENT_EMAIL` | Recipient required for successful contact delivery. |
 | `DJANGO_CONTACT_FROM_EMAIL` | Optional contact sender; otherwise the default sender is used. |
 | `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SECURE_HSTS_SECONDS` | Production HTTPS behavior. |
-| `WAGTAIL_AGENT_API_URL` | Base URL used by the MCP server. |
 | `WAGTAIL_AGENT_API_TOKEN` | Server-side bearer token used by the MCP server; never expose or commit it. |
+| `PDPW_MCP_INBOUND_TOKEN` | Dedicated bearer token for inbound remote MCP clients; keep distinct from the Wagtail service token. |
+| `PDPW_MCP_ALLOWED_ORIGINS` | Optional comma-separated exact browser origins allowed to call MCP; unset denies requests with an Origin. |
 | `AWS_STORAGE_BUCKET_NAME` | Production S3-compatible media bucket; leave unset for local development. |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Production object-storage credentials (or use the runtime's IAM credentials). |
 | `AWS_S3_REGION_NAME` | Optional S3 region. |

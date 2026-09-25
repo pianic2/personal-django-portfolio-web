@@ -45,3 +45,8 @@ Django. Explicit admin, document, API, and contact routes remain available.
 The MCP adapter is an integration boundary, not a second domain API. It
 allowlists selected Wagtail routes, converts base64 data URLs to multipart
 uploads, and blocks publish/unpublish actions at query and nested body levels.
+Render serves the adapter at `/mcp` inside the Django ASGI process using
+stateless Streamable HTTP. The Wagtail schema is generated after URL
+registration, and adapter requests use an in-process ASGI transport with the
+dedicated Wagtail service credential. A separate inbound bearer token protects
+the remote endpoint.

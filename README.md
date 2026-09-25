@@ -43,8 +43,9 @@ other secrets in the repository, browser, logs, or agent-visible responses.
   canonical content snapshot.
 - `uv run python manage.py configure_agent_account` provisions the scoped
   non-staff content account.
-- `uv run python -m portfolio.mcp_server` starts the server-side FastMCP
-  adapter when `WAGTAIL_AGENT_API_URL` and `WAGTAIL_AGENT_API_TOKEN` are set.
+- The Render ASGI process serves the canonical remote MCP endpoint at
+  `/mcp`; see [MCP integration](docs/api.md#mcp-integration) and
+  [deployment operations](docs/operations.md#deploymentruntime-boundaries).
 
 The MCP surface supports selected page drafts/revisions, localized-pair
 creation, schemas, and image/document operations. It rejects publication
