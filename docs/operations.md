@@ -64,6 +64,34 @@ Origins are denied. The canonical client endpoint is
 Restart the Render service after changing either credential or the Origin list;
 the ASGI application snapshots those values at startup.
 
+## OAuth 2.1 provider connectors
+
+When all four `PDPW_OAUTH_UPSTREAM_CLIENT_ID`,
+`PDPW_OAUTH_UPSTREAM_CLIENT_SECRET`, `PDPW_OAUTH_JWT_SIGNING_KEY`, and
+`PDPW_OAUTH_ALLOWED_IDENTITIES` values are set, the endpoint uses the single
+FastMCP-native OAuth proxy with Google OIDC. The allowlist contains verified
+Google email addresses (the owner supplied `nome@example.com`); the Google
+`sub` claim is retained as the immutable authenticated subject. Wagtail and
+inbound bearer credentials remain separate and are never forwarded to clients.
+
+Register the upstream Google OAuth web client with this exact callback:
+`https://pdpw-production.onrender.com/auth/callback`. ChatGPT uses the exact
+redirect `https://chatgpt.com/connector_platform_oauth_redirect`; Claude uses
+`https://claude.ai/api/mcp/auth_callback`. The proxy advertises OAuth metadata,
+protected-resource metadata, DCR, authorization-code flow, PKCE S256, and the
+resource audience `https://pdpw-production.onrender.com/mcp` at the canonical
+endpoint. Both clients use the same `/mcp` URL.
+
+OAuth client registrations, authorization transactions, codes, refresh metadata,
+and token mappings use the existing PostgreSQL-backed Django cache table
+`django_cache_table`; create it after migrations with
+`uv run python manage.py createcachetable django_cache_table`. Do not use the
+ephemeral disk store in production. Rotate the Google client secret and signing
+key in Render, restart the service, and revoke upstream sessions/tokens in the
+Google console. Remove an identity from `PDPW_OAUTH_ALLOWED_IDENTITIES` and
+restart to revoke its access. G2/G3/G5 provider dashboard, secret provisioning,
+and interactive smoke checks remain owner-gated.
+
 After deployment, smoke-check that POST `/mcp` without authorization returns
 401 with a Bearer challenge, then use the configured bearer token to initialize,
 list tools, and make a safe read. Test a slash-appended `/mcp/` URL; it must not
