@@ -124,6 +124,11 @@ def create_oauth_proxy() -> OAuthProxy | None:
     if not any(configured):
         return None
     values = {name: _required(name) for name in names}
+    if values["PDPW_OAUTH_STORAGE_ENCRYPTION_KEY"] == values["PDPW_OAUTH_JWT_SIGNING_KEY"]:
+        raise RuntimeError(
+            "PDPW_OAUTH_STORAGE_ENCRYPTION_KEY must differ from "
+            "PDPW_OAUTH_JWT_SIGNING_KEY."
+        )
     allowed = {
         value.strip().casefold()
         for value in values["PDPW_OAUTH_ALLOWED_IDENTITIES"].split(",")

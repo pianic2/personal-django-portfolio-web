@@ -1,9 +1,11 @@
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from cryptography.fernet import Fernet
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from starlette.routing import Router
 
 from .mcp_oauth import DatabaseCacheKeyValue, GoogleIdentityVerifier, create_oauth_proxy
 
@@ -36,6 +38,19 @@ def test_oauth_requires_a_separate_storage_encryption_key(monkeypatch):
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("PDPW_OAUTH_STORAGE_ENCRYPTION_KEY", raising=False)
     with pytest.raises(RuntimeError, match="PDPW_OAUTH_STORAGE_ENCRYPTION_KEY"):
+        create_oauth_proxy()
+
+
+def test_oauth_rejects_reusing_jwt_signing_key_for_storage(monkeypatch):
+    for name, value in {
+        "PDPW_OAUTH_UPSTREAM_CLIENT_ID": "client",
+        "PDPW_OAUTH_UPSTREAM_CLIENT_SECRET": "secret",
+        "PDPW_OAUTH_JWT_SIGNING_KEY": "same-secret",
+        "PDPW_OAUTH_ALLOWED_IDENTITIES": "nome@example.com",
+        "PDPW_OAUTH_STORAGE_ENCRYPTION_KEY": "same-secret",
+    }.items():
+        monkeypatch.setenv(name, value)
+    with pytest.raises(RuntimeError, match="must differ"):
         create_oauth_proxy()
 
 
@@ -99,6 +114,18 @@ class OAuthTests(IsolatedAsyncioTestCase):
         with patch("portfolio.mcp_oauth.httpx.AsyncClient.get", return_value=response):
             assert await verifier.verify_token("upstream-token") is None
 
+    async def test_google_verifier_rejects_missing_or_unverified_claims(self):
+        verifier = GoogleIdentityVerifier({"nome@example.com"}, "https://userinfo.example")
+        for claims in (
+            {"email": "nome@example.com", "email_verified": True},
+            {"sub": "subject", "email": "nome@example.com", "email_verified": False},
+            {"sub": "subject", "email": "nome@example.com"},
+        ):
+            response = MagicMock(status_code=200)
+            response.json.return_value = claims
+            with patch("portfolio.mcp_oauth.httpx.AsyncClient.get", return_value=response):
+                assert await verifier.verify_token("upstream-token") is None
+
 
     async def test_database_cache_store_keeps_collections_separate(self):
         store = DatabaseCacheKeyValue()
@@ -115,6 +142,7 @@ class OAuthTests(IsolatedAsyncioTestCase):
         raw = {}
 
         def cache_set(name, value, timeout):
+            assert timeout == 30
             raw[name] = value
 
         def cache_get(name):
@@ -141,3 +169,30 @@ class OAuthTests(IsolatedAsyncioTestCase):
             }
             assert await second.delete("state", collection="transactions")
             assert await second.get("state", collection="transactions") is None
+
+    async def test_oauth_discovery_and_invalid_token_routes(self):
+        proxy = create_oauth_proxy_for_test()
+        app = Router(routes=proxy.get_routes("/mcp"))
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="https://pdpw.example"
+        ) as client:
+            metadata = await client.get("/.well-known/oauth-authorization-server")
+            assert metadata.status_code == 200
+            assert metadata.json()["issuer"] == "https://pdpw-production.onrender.com/"
+            assert metadata.json()["code_challenge_methods_supported"] == ["S256"]
+            token = await client.post("/token", data={"grant_type": "authorization_code"})
+            assert token.status_code == 401
+            assert token.json()["error"] == "invalid_client"
+
+
+def create_oauth_proxy_for_test():
+    values = {
+        "PDPW_OAUTH_UPSTREAM_CLIENT_ID": "client",
+        "PDPW_OAUTH_UPSTREAM_CLIENT_SECRET": "secret",
+        "PDPW_OAUTH_JWT_SIGNING_KEY": "a-long-signing-key",
+        "PDPW_OAUTH_ALLOWED_IDENTITIES": "nome@example.com",
+        "PDPW_OAUTH_STORAGE_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+    }
+    with patch.dict("os.environ", values):
+        return create_oauth_proxy()
