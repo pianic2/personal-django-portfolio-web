@@ -105,7 +105,7 @@ class GoogleIdentityVerifier(TokenVerifier):
     """Validate Google userinfo and authorize only the configured identity."""
 
     def __init__(self, allowed_identities: set[str], userinfo_endpoint: str) -> None:
-        super().__init__(required_scopes=["openid", "email", "profile"])
+        super().__init__(required_scopes=["mcp:read", "mcp:draft"])
         self.allowed_identities = allowed_identities
         self.userinfo_endpoint = userinfo_endpoint
 
@@ -140,6 +140,16 @@ class GoogleIdentityVerifier(TokenVerifier):
             subject=subject,
             claims={"sub": subject, "email": email},
         )
+
+
+class GoogleOAuthProxy(OAuthProxy):
+    """Keep downstream MCP scopes out of Google refresh requests."""
+
+    def _prepare_scopes_for_upstream_refresh(self, scopes: list[str]) -> list[str]:
+        # Google preserves the scopes granted during the original authorization
+        # when a refresh request omits scope. The input scopes belong to the MCP
+        # token and must never be sent to Google.
+        return []
 
 
 def _required(name: str) -> str:
@@ -178,7 +188,7 @@ def create_oauth_proxy() -> OAuthProxy | None:
         allowed_identities=allowed,
         userinfo_endpoint="https://openidconnect.googleapis.com/v1/userinfo",
     )
-    return OAuthProxy(
+    return GoogleOAuthProxy(
         upstream_authorization_endpoint="https://accounts.google.com/o/oauth2/v2/auth",
         upstream_token_endpoint="https://oauth2.googleapis.com/token",
         upstream_revocation_endpoint="https://oauth2.googleapis.com/revoke",
@@ -194,7 +204,13 @@ def create_oauth_proxy() -> OAuthProxy | None:
         ],
         valid_scopes=["mcp:read", "mcp:draft"],
         forward_pkce=True,
-        extra_authorize_params={"access_type": "offline", "prompt": "consent"},
+        # OAuthProxy applies these after downstream transaction scopes; this
+        # overrides scope only on the Google authorization request.
+        extra_authorize_params={
+            "access_type": "offline",
+            "prompt": "consent",
+            "scope": "openid email profile",
+        },
         extra_token_params={"access_type": "offline"},
         client_storage=FernetEncryptionWrapper(
             DatabaseCacheKeyValue(),

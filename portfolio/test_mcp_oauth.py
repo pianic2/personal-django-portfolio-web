@@ -1,15 +1,20 @@
 import asyncio
+import base64
+import hashlib
+import re
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
 from asgiref.sync import sync_to_async
+from authlib.integrations.httpx_client import AsyncOAuth2Client
 from cryptography.fernet import Fernet
 from django.core.management import call_command
 from django.test import override_settings
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from starlette.applications import Starlette
 from starlette.routing import Router
 
 from .mcp_oauth import DatabaseCacheKeyValue, GoogleIdentityVerifier, create_oauth_proxy
@@ -94,14 +99,170 @@ def test_oauth_proxy_exposes_metadata_dcr_and_pkce_routes(monkeypatch):
         "/auth/callback",
     } <= routes
     assert str(proxy._resource_url) == "https://pdpw-production.onrender.com/mcp"
-    assert proxy.required_scopes == ["openid", "email", "profile"]
-    assert proxy._default_scope_str == "openid email profile"
+    assert proxy.required_scopes == ["mcp:read", "mcp:draft"]
+    assert proxy._default_scope_str == "mcp:read mcp:draft"
     assert proxy.client_registration_options.valid_scopes == ["mcp:read", "mcp:draft"]
-    upstream_url = proxy._build_upstream_authorize_url("transaction", {})
-    assert parse_qs(urlsplit(upstream_url).query)["scope"] == ["openid email profile"]
 
 
 class OAuthTests(IsolatedAsyncioTestCase):
+    async def test_claude_authorization_sends_google_only_scopes_and_keeps_mcp_scopes(self):
+        proxy = create_oauth_proxy_for_test()
+        app = Starlette(routes=proxy.get_routes("/mcp"))
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="https://pdpw-production.onrender.com"
+        ) as client:
+            metadata = await client.get("/.well-known/oauth-authorization-server")
+            assert {"mcp:read", "mcp:draft"} <= set(metadata.json()["scopes_supported"])
+
+            registration = await client.post(
+                "/register",
+                json={
+                    "client_name": "Claude",
+                    "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+                    "grant_types": ["authorization_code", "refresh_token"],
+                    "response_types": ["code"],
+                    "token_endpoint_auth_method": "none",
+                    "scope": "mcp:read mcp:draft",
+                },
+            )
+            assert registration.status_code in {200, 201}
+            assert registration.json()["scope"] == "mcp:read mcp:draft"
+            client_id = registration.json()["client_id"]
+
+            authorize = await client.get(
+                "/authorize",
+                params={
+                    "client_id": client_id,
+                    "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+                    "response_type": "code",
+                    "scope": "mcp:read mcp:draft",
+                    "state": "claude-state",
+                    "code_challenge": base64.urlsafe_b64encode(
+                        hashlib.sha256(b"claude-verifier").digest()
+                    ).decode().rstrip("="),
+                    "code_challenge_method": "S256",
+                    "resource": "https://pdpw-production.onrender.com/mcp",
+                },
+            )
+            assert authorize.status_code == 302
+            consent = await client.get(authorize.headers["location"])
+            assert consent.status_code == 200
+            csrf_token = re.search(
+                r'name="csrf_token" value="([^"]+)"', consent.text
+            ).group(1)
+            consent_txn = parse_qs(urlsplit(authorize.headers["location"]).query)[
+                "txn_id"
+            ][0]
+            transaction = await proxy._transaction_store.get(key=consent_txn)
+            assert transaction.scopes == ["mcp:read", "mcp:draft"]
+
+            approved = await client.post(
+                "/consent",
+                data={
+                    "txn_id": consent_txn,
+                    "csrf_token": csrf_token,
+                    "action": "approve",
+                },
+            )
+            assert approved.status_code == 302
+            google_authorize = parse_qs(urlsplit(approved.headers["location"]).query)
+            assert google_authorize["scope"] == ["openid email profile"]
+            assert not {"mcp:read", "mcp:draft"} & set(
+                google_authorize["scope"][0].split()
+            )
+
+            google_client = MagicMock()
+            google_client.fetch_token = AsyncMock(
+                return_value={
+                    "access_token": "google-access-token",
+                    "refresh_token": "google-refresh-token",
+                    "expires_in": 3600,
+                }
+            )
+            with patch(
+                "fastmcp.server.auth.oauth_proxy.AsyncOAuth2Client",
+                return_value=google_client,
+            ):
+                callback = await client.get(
+                    "/auth/callback",
+                    params={"code": "google-code", "state": consent_txn},
+                )
+            assert callback.status_code == 302
+            client_callback = parse_qs(urlsplit(callback.headers["location"]).query)
+            downstream_code = client_callback["code"][0]
+            stored_code = await proxy._code_store.get(key=downstream_code)
+            assert stored_code.scopes == ["mcp:read", "mcp:draft"]
+
+            token_response = await client.post(
+                "/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": downstream_code,
+                    "client_id": client_id,
+                    "redirect_uri": "https://claude.ai/api/mcp/auth_callback",
+                    "code_verifier": "claude-verifier",
+                },
+            )
+            assert token_response.status_code == 200
+            assert token_response.json()["scope"] == "mcp:read mcp:draft"
+
+    async def test_upstream_refresh_omits_downstream_mcp_scopes(self):
+        proxy = create_oauth_proxy_for_test()
+        proxy.get_routes("/mcp")
+        proxy.jwt_issuer.verify_token = MagicMock(return_value={"jti": "refresh-jti"})
+        upstream_token = MagicMock(
+            upstream_token_id="upstream-id",
+            refresh_token="google-refresh-token",
+            refresh_token_expires_at=None,
+            raw_token_data={},
+        )
+        proxy._jti_mapping_store = MagicMock()
+        proxy._jti_mapping_store.get = AsyncMock(
+            return_value=MagicMock(upstream_token_id="upstream-id")
+        )
+        proxy._jti_mapping_store.put = AsyncMock()
+        proxy._jti_mapping_store.delete = AsyncMock()
+        proxy._upstream_token_store = MagicMock()
+        proxy._upstream_token_store.get = AsyncMock(return_value=upstream_token)
+        proxy._upstream_token_store.put = AsyncMock()
+        proxy._refresh_token_store = MagicMock()
+        proxy._refresh_token_store.put = AsyncMock()
+        proxy._refresh_token_store.delete = AsyncMock()
+        requests = []
+
+        async def respond(request):
+            requests.append(request)
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "new-google-access-token",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                },
+            )
+
+        oauth_client = AsyncOAuth2Client(
+            client_id="client",
+            client_secret="secret",
+            transport=httpx.MockTransport(respond),
+        )
+        with patch(
+            "fastmcp.server.auth.oauth_proxy.AsyncOAuth2Client",
+            return_value=oauth_client,
+        ):
+            result = await proxy.exchange_refresh_token(
+                client=MagicMock(client_id="claude-client"),
+                refresh_token=MagicMock(token="fastmcp-refresh-token"),
+                scopes=["mcp:read", "mcp:draft"],
+            )
+        assert result.scope == "mcp:read mcp:draft"
+        assert len(requests) == 1
+        form = parse_qs(requests[0].content.decode())
+        assert "scope" not in form
+        assert not {"mcp:read", "mcp:draft"} & set(form.get("scope", []))
+        await oauth_client.aclose()
+
     async def test_google_verifier_requires_verified_allowlisted_email_and_binds_subject(self):
         verifier = GoogleIdentityVerifier({"nome@example.com"}, "https://userinfo.example")
         response = MagicMock(status_code=200)
@@ -113,6 +274,7 @@ class OAuthTests(IsolatedAsyncioTestCase):
         assert token is not None
         assert token.subject == "google-subject"
         assert token.client_id == "google:google-subject"
+        assert token.scopes == ["mcp:read", "mcp:draft"]
 
 
     async def test_google_verifier_rejects_non_allowlisted_identity(self):
