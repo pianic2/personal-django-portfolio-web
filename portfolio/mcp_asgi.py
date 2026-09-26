@@ -11,6 +11,7 @@ from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
 from wagtail.api.v3.urls import api as wagtail_api
 
+from .mcp_oauth import create_oauth_proxy
 from .mcp_server import (
     _BearerTokenAuth,
     _encode_media_upload,
@@ -31,17 +32,30 @@ def _allowed_origins() -> set[str]:
 class MCPBoundary:
     """Route MCP requests and enforce the endpoint's narrow Origin policy."""
 
-    def __init__(self, django_app, mcp_app, verifier, allowed_origins):
+    def __init__(
+        self,
+        django_app,
+        mcp_app,
+        verifier,
+        allowed_origins,
+        oauth_enabled=False,
+        oauth_paths=(),
+    ):
         self.django_app = django_app
         self.mcp_app = mcp_app
         self.verifier = verifier
         self.allowed_origins = allowed_origins
+        self.oauth_enabled = oauth_enabled
+        self.oauth_paths = frozenset(oauth_paths)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
             await self.mcp_app(scope, receive, send)
             return
         path = scope.get("path", "")
+        if self.oauth_enabled and path in self.oauth_paths:
+            await self.mcp_app(scope, receive, send)
+            return
         if path not in {"/mcp", "/mcp/"}:
             await self.django_app(scope, receive, send)
             return
@@ -154,7 +168,8 @@ def compose_asgi(django_app):
         wagtail_api.get_openapi_schema(path_prefix="/api/v3"),
         cls=DjangoJSONEncoder,
     ))
-    verifier = _InboundTokenVerifier()
+    oauth = create_oauth_proxy()
+    verifier = oauth or _InboundTokenVerifier()
     server = create_server(schema, client, auth_verifier=verifier)
     mcp_app = server.http_app(
         path="/mcp",
@@ -177,4 +192,14 @@ def compose_asgi(django_app):
             await client.aclose()
 
     mcp_app.router.lifespan_context = lifespan
-    return MCPBoundary(django_app, mcp_app, verifier, _allowed_origins())
+    oauth_paths = (
+        {route.path for route in oauth.get_routes("/mcp")} if oauth is not None else set()
+    )
+    return MCPBoundary(
+        django_app,
+        mcp_app,
+        verifier,
+        _allowed_origins(),
+        oauth_enabled=oauth is not None,
+        oauth_paths=oauth_paths,
+    )
