@@ -7,11 +7,89 @@ from unittest.mock import patch
 import httpx
 from django.test import SimpleTestCase
 
-from .mcp_asgi import _DjangoASGIAuthorityAdapter, _valid_origin
+from .mcp_asgi import MCPBoundary, _DjangoASGIAuthorityAdapter, _valid_origin
 from .mcp_server import _InboundTokenVerifier
 
 
 class MCPASGISecurityConfigTests(SimpleTestCase):
+    def test_oauth_boundary_routes_only_mcp_and_exact_oauth_paths_to_mcp_app(self):
+        calls = []
+
+        async def record(name):
+            async def app(scope, receive, send):
+                calls.append((name, scope["path"]))
+                await send({"type": "http.response.start", "status": 200, "headers": []})
+                await send({"type": "http.response.body", "body": b"ok"})
+
+            return app
+
+        async def run():
+            calls.clear()
+
+            async def send(message):
+                return None
+
+            class Verifier:
+                async def verify_token(self, token):
+                    return object() if token == "token" else None
+
+            boundary = MCPBoundary(
+                await record("django"),
+                await record("mcp"),
+                verifier=Verifier(),
+                allowed_origins=set(),
+                oauth_enabled=True,
+                oauth_paths={
+                    "/.well-known/oauth-authorization-server", "/authorize", "/token",
+                    "/register", "/revoke", "/.well-known/oauth-protected-resource/mcp",
+                    "/auth/callback", "/consent",
+                },
+            )
+            await boundary(
+                {
+                    "type": "http",
+                    "path": "/mcp",
+                    "method": "POST",
+                    "headers": [(b"authorization", b"Bearer token")],
+                },
+                None,
+                send,
+            )
+            for path in (
+                "/.well-known/oauth-authorization-server",
+                "/authorize",
+                "/token",
+                "/register",
+                "/revoke",
+                "/.well-known/oauth-protected-resource/mcp",
+                "/auth/callback", "/consent", "/admin/", "/api/v3/pages/",
+                "/ordinary-django-path/",
+            ):
+                await boundary(
+                    {"type": "http", "path": path, "method": "GET", "headers": []},
+                    None,
+                    send,
+                )
+
+        asyncio.run(run())
+        self.assertEqual(
+            calls,
+            [
+                ("mcp", "/mcp"),
+                ("mcp", "/.well-known/oauth-authorization-server"),
+                ("mcp", "/authorize"),
+                ("mcp", "/token"),
+                ("mcp", "/register"),
+                ("mcp", "/revoke"),
+                ("mcp", "/.well-known/oauth-protected-resource/mcp"),
+                ("mcp", "/auth/callback"),
+                ("mcp", "/consent"),
+                ("django", "/admin/"),
+                ("django", "/api/v3/pages/"),
+                ("django", "/ordinary-django-path/"),
+            ],
+        )
+
     def test_internal_asgi_adapter_preserves_default_and_nondefault_ports(self):
         self.assertIsNone(httpx.URL("https://localhost").port)
         observed = []

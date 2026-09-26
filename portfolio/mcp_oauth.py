@@ -105,7 +105,7 @@ class GoogleIdentityVerifier(TokenVerifier):
     """Validate Google userinfo and authorize only the configured identity."""
 
     def __init__(self, allowed_identities: set[str], userinfo_endpoint: str) -> None:
-        super().__init__()
+        super().__init__(required_scopes=["openid", "email", "profile"])
         self.allowed_identities = allowed_identities
         self.userinfo_endpoint = userinfo_endpoint
 

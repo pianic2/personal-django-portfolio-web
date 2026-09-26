@@ -1,6 +1,7 @@
 import asyncio
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -93,6 +94,11 @@ def test_oauth_proxy_exposes_metadata_dcr_and_pkce_routes(monkeypatch):
         "/auth/callback",
     } <= routes
     assert str(proxy._resource_url) == "https://pdpw-production.onrender.com/mcp"
+    assert proxy.required_scopes == ["openid", "email", "profile"]
+    assert proxy._default_scope_str == "openid email profile"
+    assert proxy.client_registration_options.valid_scopes == ["mcp:read", "mcp:draft"]
+    upstream_url = proxy._build_upstream_authorize_url("transaction", {})
+    assert parse_qs(urlsplit(upstream_url).query)["scope"] == ["openid email profile"]
 
 
 class OAuthTests(IsolatedAsyncioTestCase):
