@@ -1,28 +1,27 @@
 <p align="center">
-  <img src="docs/assets/readme-hero.svg" alt="Personal Django Portfolio Web — editorial backend for a bilingual portfolio" width="100%">
+  <img
+    src="docs/assets/readme-background.svg"
+    alt="Technology stack background"
+    width="100%"
+  />
 </p>
 
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="" width="40" height="40"><br>
-  <strong>Personal Django Portfolio Web</strong><br>
-  Django and Wagtail backend for a separately maintained React portfolio.
+  <img src="portfolio/static/portfolio/portfolio-mark.svg" alt="" width="40" height="40"><br>
 </p>
+
+<h1 align="center">Personal Django Portfolio Web</h1>
+
+<p align="center">Django and Wagtail backend for a separately maintained React portfolio.</p>
 
 <p align="center">
   <a href="https://github.com/pianic2/personal-django-portfolio-web/actions/workflows/quality.yml"><img src="https://github.com/pianic2/personal-django-portfolio-web/actions/workflows/quality.yml/badge.svg?branch=main" alt="Backend quality workflow"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-7a9b70.svg" alt="MIT License"></a>
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Django-5.2-092E20?logo=django&logoColor=white" alt="Django 5.2">
-  <img src="https://img.shields.io/badge/Wagtail-8.0-43B1B0?logo=wagtail&logoColor=white" alt="Wagtail 8.0">
-  <img src="https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white" alt="Python 3.13">
-  <img src="https://img.shields.io/badge/PostgreSQL-required-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
-</p>
-
 ## Quick start
 
-Requires Python `>=3.13,<3.14`, [`uv`](https://docs.astral.sh/uv/), and Docker Compose. PostgreSQL is the supported database.
+Requires Python `>=3.13,<3.14`, [`uv`](https://docs.astral.sh/uv/), and Docker Compose. The backend uses Django 5.2.17, Wagtail 8.0, and PostgreSQL.
 
 ```bash
 uv sync --frozen
@@ -32,19 +31,19 @@ uv run python manage.py migrate
 uv run python manage.py runserver
 ```
 
-## Interfaces
+## Backend interfaces
 
 | Consumer | Backend interface | Purpose |
 | --- | --- | --- |
 | React portfolio | Wagtail v3 API, `/api/contact/` | Published portfolio content and contact form |
-| MCP clients | `/mcp` | Allowlisted content editing and media operations |
-| Editors | `/admin/`, `/django-admin/` | Wagtail editorial workflow and standalone capability records |
+| MCP clients | `/mcp` | Allowlisted draft content and media operations |
+| Editors | `/admin/`, `/django-admin/` | Wagtail content editing; Django admin manages standalone capability records |
 
 The backend owns bilingual Italian and English content. The React application is maintained separately and is not included here.
 
-## Development
+## Development and testing
 
-Run the canonical quality gate (Ruff, Django checks, migration drift, and the test suite):
+Run a focused test with `uv run pytest path/to/test_file.py -q`, or run the full suite with `uv run pytest -q`. The canonical quality gate also runs Ruff, Django checks, and migration drift validation:
 
 ```bash
 bash scripts/quality.sh
