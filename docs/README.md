@@ -1,17 +1,22 @@
-# Technical documentation
+# Documentation
 
-This directory documents the implemented backend contract. The root
-[README](../README.md) is the bootstrap entry point; these pages provide the
-technical detail needed for targeted maintenance.
+The root [README](../README.md) covers setup at a glance. These guides document the implemented backend.
 
-- [Architecture and domain overview](architecture.md)
-- [Models and content model](models.md)
-- [API and integration contracts](api.md)
-- [Development and configuration](development.md)
-- [Testing and validation](testing.md)
-- [Operations and management commands](operations.md)
-- [Documentation inventory](inventory.md)
+## Architecture
 
-The documentation describes the repository at the current commit. It does not
-replace Jira acceptance criteria, project governance, or the repository
-execution policy in `AGENTS.md`.
+- [Architecture overview](architecture/overview.md)
+- [Models and content model](architecture/models.md)
+
+## Development
+
+- [Setup and configuration](development/setup-and-configuration.md)
+- [Testing and validation](development/testing.md)
+
+## Operations
+
+- [Operations and management commands](operations/management-commands.md)
+
+## Reference
+
+- [API and integration contracts](reference/api.md)
+- [Documentation inventory](reference/documentation-inventory.md)

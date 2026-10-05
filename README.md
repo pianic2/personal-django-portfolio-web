@@ -1,67 +1,30 @@
-# Personal Django Portfolio Web
+<h1 align="center">
+  <img
+    src="docs/assets/readme-background.svg"
+    alt="Personal Django Portfolio Web — Django and Wagtail backend for a separate React portfolio"
+    width="100%"
+  />
+</h1>
 
-Django 5.2.17 and Wagtail 8.0 backend for the separate React portfolio
-consumer. The repository owns bilingual editorial content, its JSON API, the
-contact endpoint, and a least-privilege MCP content editor.
+<p align="center">
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Django%20%2B%20PostgreSQL-backend-111827?style=for-the-badge" alt="Django and PostgreSQL backend"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-facc15?style=for-the-badge" alt="MIT License"></a>
+  <a href="https://github.com/pianic2/personal-django-portfolio-web/actions/workflows/quality.yml"><img src="https://github.com/pianic2/personal-django-portfolio-web/actions/workflows/quality.yml/badge.svg?branch=main&amp;style=for-the-badge" alt="Backend quality workflow"></a>
+  <a href="docs/README.md"><img src="https://img.shields.io/badge/docs-guides-111827?style=for-the-badge" alt="Documentation guides"></a>
+</p>
 
-## Requirements and bootstrap
+Django and Wagtail backend for a separately maintained React portfolio, with PostgreSQL-backed content and APIs.
 
-Use Python `>=3.13,<3.14` and `uv`. PostgreSQL is the only supported database
-backend for local development, tests, and production-oriented execution.
+## Quick start
+
+Requires Python `>=3.13,<3.14`, [uv](https://docs.astral.sh/uv/), and Docker Compose.
 
 ```bash
 uv sync --frozen
 cp .env.example .env
 docker compose up -d postgres
 uv run python manage.py migrate
-uv run python manage.py check
 uv run python manage.py runserver
 ```
 
-Create an administrator with `uv run python manage.py createsuperuser`.
-The canonical repository gate is `bash scripts/quality.sh`; it runs Ruff,
-Django checks, migration drift validation, and the full pytest suite.
-
-## Configuration and security
-
-The optional root `.env` file is loaded locally and must not be committed.
-`DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS` are required when
-`DJANGO_DEBUG=false`. `DJANGO_DATABASE_URL` must be an explicit PostgreSQL URL;
-SQLite is not a supported runtime backend.
-Email, CORS, production HTTPS, and MCP settings are documented in
-[Development and configuration](docs/development.md). Never put API tokens or
-other secrets in the repository, browser, logs, or agent-visible responses.
-
-## Admin, content, and APIs
-
-- `/admin/` is Wagtail administration for pages, revisions, publication,
-  images, documents, and page permissions.
-- `/django-admin/` is Django administration for standalone capability data.
-- `/api/v3/openapi.json` and `/api/v3/docs/` expose the Wagtail API contract.
-- `/api/contact/` accepts the validated public contact form.
-- `uv run python manage.py import_portfolio` imports the repeatable bilingual
-  canonical content snapshot.
-- `uv run python manage.py configure_agent_account` provisions the scoped
-  non-staff content account.
-- The Render ASGI process serves the canonical remote MCP endpoint at
-  `/mcp`; see [MCP integration](docs/api.md#mcp-integration) and
-  [deployment operations](docs/operations.md#deploymentruntime-boundaries).
-
-The MCP surface supports selected page drafts/revisions, localized-pair
-creation, schemas, and image/document operations. It rejects publication
-actions and does not expose delete operations. See [API and integration
-contracts](docs/api.md) for routes, inputs, outputs, errors, and boundaries.
-
-## Documentation map
-
-- [Architecture and domain overview](docs/architecture.md)
-- [Models and content model](docs/models.md)
-- [API and integration contracts](docs/api.md)
-- [Development and configuration](docs/development.md)
-- [Testing and validation](docs/testing.md)
-- [Operations and management commands](docs/operations.md)
-- [Documentation inventory](docs/inventory.md)
-
-The backend does not contain the React frontend or a deployment platform
-configuration. Repository execution policy remains in `AGENTS.md`; project
-governance remains in Jira/Confluence.
+See [Development](docs/development/setup-and-configuration.md) for configuration and [Testing](docs/development/testing.md) for validation commands.
