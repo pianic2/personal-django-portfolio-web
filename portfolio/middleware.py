@@ -12,7 +12,10 @@ PAGE_DETAIL_PATH = re.compile(r"^/api/v3/pages/(?P<page_id>\d+)/$")
 
 
 def _is_content_agent(request):
-    if not request.user.is_authenticated:
+    # Resolve the bearer identity locally: assigning it to request.user would let
+    # an API token authenticate every downstream view, including both admins.
+    user = request.user
+    if not user.is_authenticated:
         scheme, _, token = request.headers.get("Authorization", "").partition(" ")
         if scheme.casefold() == "bearer" and token:
             api_token = (
@@ -24,11 +27,8 @@ def _is_content_agent(request):
                 .first()
             )
             if api_token is not None and api_token.user.is_active:
-                request.user = api_token.user
-    return (
-        request.user.is_authenticated
-        and request.user.groups.filter(name=AGENT_GROUP_NAME).exists()
-    )
+                user = api_token.user
+    return user.is_authenticated and user.groups.filter(name=AGENT_GROUP_NAME).exists()
 
 
 def _deny_agent_localized_boundary(request):
