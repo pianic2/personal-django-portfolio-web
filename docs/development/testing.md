@@ -16,6 +16,7 @@ and `tests.py`.
 | `portfolio/test_mcp_e2e.py` | `MCPAgentBoundaryTests` exercises authenticated draft/media MCP flows and publication-bypass rejection against the running integration boundary. |
 | `portfolio/test_contact.py` | `ContactEndpointTests` covers successful delivery, stable validation errors, payload limits, duplicate/IP throttles, CORS, and stable delivery failures. |
 | `portfolio/test_admin.py` | `AdminBrandingAndOwnershipTests` covers admin identity/favicon and the ownership boundary for standalone capability data. |
+| `portfolio/test_security.py` | `APITokenAdminBoundaryTests` keeps Wagtail API bearer tokens confined to the API and out of both admins; the password tests cover the Django password-validation policy for admin accounts. |
 
 The test and class names are the discoverable intent mechanism for the current
 test suite. `setUp`/`setUpTestData` methods create the corresponding database,
